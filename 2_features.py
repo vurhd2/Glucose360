@@ -269,32 +269,25 @@ def calculate_AGP_features(cgm_df,glucose_col = 'glucose'):
 
 
 def main():
-    cgm_df = pd.read_csv('binge_days_data.csv')
-    #cgm_df = pd.read_csv('non_binge_days_data.csv')
-    #cgm_df = pd.read_csv('intermediate_data/combined.csv')
+    cgm_df = pd.read_csv('intermediate_data/combined.csv')
 
-    #cgm_df['glucose'].replace('Low', '40', inplace=True)
+    cgm_df['glucose'].replace('Low', '40', inplace=True)
     
     cgm_df['glucose'] = pd.to_numeric(cgm_df['glucose'], errors='coerce')
     cgm_df['datetime_local'] = pd.to_datetime(cgm_df['datetime_local'])
 
-    #cgm_df.to_csv('cleaned_combined.csv')
+    cgm_df.to_csv('cleaned_combined.csv')
    
-    #resampled_cgm_df = resample_cgm_data(cgm_df)
+    resampled_cgm_df = resample_cgm_data(cgm_df)
 
 
     generic_features = calculate_AGP_features(cgm_df)
 
     # Save the features to a CSV file
-    generic_features.to_csv('binge_days_features.csv', index=False)
-    #generic_features.to_csv('non_binge_days_features.csv', index=False)
-    #generic_features.to_csv('features.csv', index=False)
+    generic_features.to_csv('features.csv', index=False)
 
 
     print(generic_features)
 
 if __name__ == "__main__":
     main()
-
-# After resampling we are getting nans in cgm data for the ids.
-# [301, 308, 313, 314, 315, 325, 326, 328, 334, 336, 337, 338, 340]
