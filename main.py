@@ -1,10 +1,37 @@
 import pandas as pd
+import glob
 
-def import_data(path, glucose_col="Glucose Value (mg/dL)"):
-   global glucose 
+"""
+Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path
+@param path    the path of the directory to be parsed through
+@param glucose_col   the header of the column containing the glucose values
+"""
+def import_directory(path, glucose_col="Glucose Value (mg/dL)"):
+   global glucose
    glucose = glucose_col
 
+   csv_files = glob.glob(path + "/*.csv")
+
+   data = pd.DataFrame()
+   for file in csv_files:
+      df = import_data(file)
+
+      data = pd.concat([data, df])
+
+   data = data.set_index(['id', 'Timestamp (YYYY-MM-DDThh:mm:ss)'])
+
+   return data
+
+"""
+Returns a pre-processed Pandas DataFrame containing the data for the csv file at the given path
+@param path    the path of the csv file to be pre-processed and read into a Pandas Dataframe
+"""
+def import_data(path):
    df = pd.read_csv(path)
+
+   id = df["Patient Info"].iloc[0] + df["Patient Info"].iloc[1] + df["Patient Info"].iloc[2]
+   df['id'] = id
+
    df = df.dropna(subset=[glucose])
    df = df.replace("Low", 40)
    df = df.replace("High", 400)
@@ -51,15 +78,15 @@ def main():
    #df = import_data("datasets/Clarity_Export_00001_Fitzroy_Penelope_2023-10-16_235810.csv")
    #df = import_data("datasets/Clarity_Export_00002_Barrow_Nathaniel_2023-10-16_235810.csv")
 
-   print("summary: " + str(summary(df)))
+   df = import_directory("datasets")
 
-   print("mean: " + str(ave_glucose(df)))
-
-   print("a1c: " + str(a1c(df)))
-
-   print("gmi: " + str(gmi(df)))
-
-   print("std: " + str(std(df)))
+   for id, data in df.groupby(level=0):
+      print("ID: " + str(id))
+      print("summary: " + str(summary(data)))
+      print("mean: " + str(ave_glucose(data)))
+      print("a1c: " + str(a1c(data)))
+      print("gmi: " + str(gmi(data)))
+      print("std: " + str(std(data)))
 
 if __name__ == "__main__":
    main()
