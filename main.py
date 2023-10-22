@@ -6,9 +6,12 @@ Returns a Multiindexed Pandas DataFrame containing all of the csv data found in 
 @param path    the path of the directory to be parsed through
 @param glucose_col   the header of the column containing the glucose values
 """
-def import_directory(path, glucose_col="Glucose Value (mg/dL)"):
+def import_directory(path, glucose_col="Glucose Value (mg/dL)", time_col="Timestamp (YYYY-MM-DDThh:mm:ss)"):
    global glucose
    glucose = glucose_col
+
+   global time
+   time = time_col
 
    csv_files = glob.glob(path + "/*.csv")
 
@@ -18,12 +21,12 @@ def import_directory(path, glucose_col="Glucose Value (mg/dL)"):
 
       data = pd.concat([data, df])
 
-   data = data.set_index(['id', 'Timestamp (YYYY-MM-DDThh:mm:ss)'])
+   data = data.set_index(['id', time])
 
    return data
 
 """
-Returns a pre-processed Pandas DataFrame containing the data for the csv file at the given path
+Returns a pre-processed Pandas DataFrame containing the timestamp and glucose data for the csv file at the given path
 @param path    the path of the csv file to be pre-processed and read into a Pandas Dataframe
 """
 def import_data(path):
@@ -36,9 +39,40 @@ def import_data(path):
    df = df.replace("Low", 40)
    df = df.replace("High", 400)
 
+   df[time] = pd.to_datetime(df[time], format='%Y-%m-%d %H:%M:%S')
+
    df[glucose] = pd.to_numeric(df[glucose])
 
-   return df
+   return df[['id', time, glucose]]
+
+"""
+Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
+returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
+"""
+def create_features(data):
+   df = pd.DataFrame()
+
+"""
+Returns a multiindexed Pandas DataFrame containing only the patient data during their respective 'events'
+@param data    a multiindexed Pandas DataFrame containing all the relevant patient data
+@param events  a single indexed Pandas DataFrame, with each row specifying a single event in the form of
+               an id, a datetime, # of hours before the datetime to include, # of hours after to include, and a desc
+"""
+def retrieve_event_data(df, events, before="before", after="after", desc="description"):
+   event_data = pd.DataFrame()
+
+   for row in events:
+      id = row['id']
+      datetime = row[time]
+
+      data = df[id][df[id][time] >= datetime - before and df[id][time] <= datetime + after]
+      data[desc] = row[desc]
+
+      event_data = pd.concat([event_data, data])
+
+   event_data = event_data.set_index([desc, 'id', time])
+
+   return event_data
 
 def ave_glucose(df):
    return df[glucose].mean()
@@ -74,10 +108,6 @@ def time_in_range(df, low, high):
    temp_df = df[df[glucose] <= high and df[glucose] >= low]
 
 def main():
-   #df = import_data("datasets/Clarity_Export_00000_Sutherland_Eliza_2023-10-16_235810.csv")
-   #df = import_data("datasets/Clarity_Export_00001_Fitzroy_Penelope_2023-10-16_235810.csv")
-   #df = import_data("datasets/Clarity_Export_00002_Barrow_Nathaniel_2023-10-16_235810.csv")
-
    df = import_directory("datasets")
 
    for id, data in df.groupby(level=0):
@@ -87,6 +117,9 @@ def main():
       print("a1c: " + str(a1c(data)))
       print("gmi: " + str(gmi(data)))
       print("std: " + str(std(data)))
+   
+   events = pd.DataFrame()
+   event_data = retrieve_event_data()
 
 if __name__ == "__main__":
    main()
