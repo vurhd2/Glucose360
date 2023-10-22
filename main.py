@@ -39,7 +39,7 @@ def import_data(path):
    df = df.replace("Low", 40)
    df = df.replace("High", 400)
 
-   df[time] = pd.to_datetime(df[time], format='%Y-%m-%d %H:%M:%S')
+   df[time] = pd.to_datetime(df[time], format='%Y-%m-%dT%H:%M:%S')
 
    df[glucose] = pd.to_numeric(df[glucose])
 
@@ -61,11 +61,11 @@ Returns a multiindexed Pandas DataFrame containing only the patient data during 
 def retrieve_event_data(df, events, before="before", after="after", desc="description"):
    event_data = pd.DataFrame()
 
-   for row in events:
+   for index, row in events.iterrows():
       id = row['id']
-      datetime = row[time]
+      datetime = pd.Timestamp(row[time])
 
-      data = df[id][df[id][time] >= datetime - before and df[id][time] <= datetime + after]
+      data = df[id][(df[id][time] >= datetime - before) and (df[id][time] <= datetime + after)]
       data[desc] = row[desc]
 
       event_data = pd.concat([event_data, data])
@@ -118,8 +118,14 @@ def main():
       print("gmi: " + str(gmi(data)))
       print("std: " + str(std(data)))
    
-   events = pd.DataFrame()
-   event_data = retrieve_event_data()
+   event1 = pd.DataFrame.from_records([{'id': "NathanielBarrow9/8/88", time: '2023-08-08 7:45:35', 'before': 2, 'after': 3, 'description': 'testing1'}])
+   event2 = pd.DataFrame.from_records([{'id': "ElizaSutherland2/23/68", time: '2023-07-03 3:15:17', 'before': 6, 'after': 9, 'description': 'testing2'}])
+   event3 = pd.DataFrame.from_records([{'id': "PenelopeFitzroy1/5/52", time: '2023-06-24 0:26:10', 'before': 3, 'after': 1, 'description': 'testing3'}])
+   events = pd.concat([event1, event2, event3])
+   
+   event_data = retrieve_event_data(df, events)
+
+   print(event_data.info())
 
 if __name__ == "__main__":
    main()
