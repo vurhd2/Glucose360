@@ -21,7 +21,7 @@ def import_directory(path, glucose_col="Glucose Value (mg/dL)", time_col="Timest
 
       data = pd.concat([data, df])
 
-   data = data.set_index(['id', time])
+   data = data.set_index(['id'])
 
    return data
 
@@ -64,13 +64,18 @@ def retrieve_event_data(df, events, before="before", after="after", desc="descri
    for index, row in events.iterrows():
       id = row['id']
       datetime = pd.Timestamp(row[time])
+      initial = datetime - pd.Timedelta(row[before], 'h')
+      final = datetime + pd.Timedelta(row[after], 'h')
 
-      data = df[id][(df[id][time] >= datetime - before) and (df[id][time] <= datetime + after)]
+      patient_data = df.loc[id]
+      data = patient_data[(patient_data[time] >= initial) & (patient_data[time] <= final)].copy()
+      
+      data['id'] = id
       data[desc] = row[desc]
 
       event_data = pd.concat([event_data, data])
 
-   event_data = event_data.set_index([desc, 'id', time])
+   event_data = event_data.set_index([desc, 'id'])
 
    return event_data
 
@@ -125,7 +130,7 @@ def main():
    
    event_data = retrieve_event_data(df, events)
 
-   print(event_data.info())
+   print(event_data)
 
 if __name__ == "__main__":
    main()
