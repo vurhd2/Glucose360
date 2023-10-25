@@ -22,7 +22,6 @@ def import_directory(path, glucose_col="Glucose Value (mg/dL)", time_col="Timest
       data = pd.concat([data, df])
 
    data = data.set_index(['id'])
-   print(data)
 
    return data
 
@@ -51,12 +50,12 @@ def import_data(path):
    return df
 
 """
-Resamples and interpolates the given default-indexed DataFrame
+Resamples and (if needed) interpolates the given default-indexed DataFrame
 @param df         the DataFrame to be resampled and interpolated
 @param minutes    the length of the interval to be resampled into (in minutes)
 """
-def resample_data(df, minutes=2):
-   # Sort the DataFrame by subject ID and datetime
+def resample_data(df, minutes=5):
+   # Sort the DataFrame by datetime
    df.sort_values(by=[time_name], inplace=True)
    
    interval = str(minutes) + 'T'
@@ -64,8 +63,7 @@ def resample_data(df, minutes=2):
    df = df.set_index(time_name)
 
    resampled_df = df.resample(interval, origin='start').mean()
-
-   resampled_df.interpolate('linear', axis=1, inplace=True) 
+   resampled_df.interpolate('linear', inplace=True) 
 
    resampled_df.reset_index(inplace=True)
 
