@@ -51,17 +51,11 @@ def import_data(path):
    return df
 
 """
-Resample CGM data to 5-minute intervals for each subject.
-
-Parameters:
-cgm_df (DataFrame): The original CGM DataFrame
-time_column (str): The column name for the datetime
-id_column (str): The column name for the subject ID
-
-Returns:
-DataFrame: A new DataFrame with resampled data
+Resamples and interpolates the given default-indexed DataFrame
+@param df         the DataFrame to be resampled and interpolated
+@param minutes    the length of the interval to be resampled into (in minutes)
 """
-def resample_data(df, minutes=5):
+def resample_data(df, minutes=2):
    # Sort the DataFrame by subject ID and datetime
    df.sort_values(by=[time_name], inplace=True)
    
