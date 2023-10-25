@@ -44,7 +44,38 @@ def import_data(path):
 
    df[glucose_name] = pd.to_numeric(df[glucose_name])
 
-   return df[['id', time_name, glucose_name]]
+   df = df[[time_name, glucose_name]].copy()
+   df = resample_data(df)
+   df['id'] = id
+
+   return df
+
+"""
+Resample CGM data to 5-minute intervals for each subject.
+
+Parameters:
+cgm_df (DataFrame): The original CGM DataFrame
+time_column (str): The column name for the datetime
+id_column (str): The column name for the subject ID
+
+Returns:
+DataFrame: A new DataFrame with resampled data
+"""
+def resample_data(df, minutes=5):
+   # Sort the DataFrame by subject ID and datetime
+   df.sort_values(by=[time_name], inplace=True)
+   
+   interval = str(minutes) + 'T'
+
+   df = df.set_index(time_name)
+
+   resampled_df = df.resample(interval, origin='start').mean()
+
+   resampled_df.interpolate('linear', axis=1, inplace=True) 
+
+   resampled_df.reset_index(inplace=True)
+
+   return resampled_df
 
 def glucose():
    return glucose_name
