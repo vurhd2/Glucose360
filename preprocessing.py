@@ -32,7 +32,8 @@ Returns a pre-processed Pandas DataFrame containing the timestamp and glucose da
 def import_data(path):
    df = pd.read_csv(path)
 
-   id = df["Patient Info"].iloc[0] + df["Patient Info"].iloc[1] + df["Patient Info"].iloc[2]
+   #id = df["Patient Info"].iloc[0] + df["Patient Info"].iloc[1] + df["Patient Info"].iloc[2]
+   id = df["Patient Info"].iloc[0] + df["Patient Info"].iloc[1]
    df['id'] = id
 
    df = df.dropna(subset=[glucose_name])
