@@ -52,7 +52,7 @@ def spaghetti_plot_all(df):
       spaghetti_plot(data, id)
 
 """
-"""
+
 def spaghetti_plot(df, id):
    data = df.loc[id]
    data.reset_index(inplace=True)
@@ -73,4 +73,33 @@ def spaghetti_plot(df, id):
 
    plot = sns.relplot(data=time_data, kind="line", x='Time', y=glucose(), hue='Day')
 
+   
+   plt.show()
+
    plot.savefig("./plots/" + str(id) + 'Spaghetti.png')
+
+"""
+
+def spaghetti_plot(df, id):
+   data = df.loc[id]
+
+   data.reset_index(inplace=True)
+
+   # Convert timestamp column to datetime format
+   data[time()] = pd.to_datetime(data[time()])
+
+   data['Day'] = data[time()].dt.date
+
+   times = data[time()] - data[time()].dt.normalize()
+   # need to be in a DateTime format so seaborn can tell how to scale the x axis labels
+   data['Time'] = pd.to_datetime(['1/1/1970' for i in range(data[time()].size)]) + times
+
+   data.sort_values(by=[time()], inplace=True)
+
+   plot = sns.relplot(data=data, kind="line", x='Time', y=glucose(), hue='Day')
+
+   plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
+   plt.xticks(rotation=45)
+   plt.show()
+
+   plt.savefig("./plots/" + str(id) + 'Spaghetti.png', bbox_inches='tight')
