@@ -20,21 +20,19 @@ Plots and saves only the given patient's data
 def daily_plot(df, events, id, save=False):
    data = df.loc[id]
 
-   event_data = events.set_index('id').loc[id]
-
-   # Convert timestamp column to datetime format
    data[time()] = pd.to_datetime(data[time()])
-
-   #data['Day'] = data[time()].dt.date
 
    plot = sns.relplot(data=data, kind="line", x=time(), y=glucose())
 
-   for ax in plot.axes.flat:
-      if isinstance(event_data, pd.DataFrame):
-         for index, row in event_data.iterrows():
-            ax.axvline(pd.to_datetime(row[time()]), color="orange")
-      else:
-         ax.axvline(pd.to_datetime(event_data[time()]), color="orange")
+   # plotting vertical lines to represent the events
+   if events is not None:
+      event_data = events.set_index('id').loc[id]
+      for ax in plot.axes.flat:
+         if isinstance(event_data, pd.DataFrame):
+            for index, row in event_data.iterrows():
+               ax.axvline(pd.to_datetime(row[time()]), color="orange")
+         else:
+            ax.axvline(pd.to_datetime(event_data[time()]), color="orange")
 
    plt.show()
 
