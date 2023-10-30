@@ -10,34 +10,31 @@ Plots and saves all of the patients data in separate graphs
 def daily_plot_all(df, events, save=False):
    sns.set_theme()
    for id, data in df.groupby('id'):
-      plot = sns.lineplot(data=data, x=time(), y=glucose())
-
-      events.set_index('id', inplace=True)
-
-      event_times = pd.to_datetime(events.loc[id][time()])
-      print(event_times)
-      plt.vlines(x = event_times, ymin = 0, ymax = 1, colors='red', linestyles='dashed')
-
-      #for row in events.loc[id]:
-         #plot.axvline(row[time()], color='r')
-
-      events.reset_index(inplace=True)
-
-      plt.show()
-
-      if save:
-         plot.savefig("./plots/" + str(id) + 'Daily.png')
+      daily_plot(df, events, id, save)
 
 """
 Plots and saves only the given patient's data
 @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
 @param id   the id of the patient whose data is graphed
 """
-def daily_plot(df, id, save=False):
+def daily_plot(df, events, id, save=False):
    data = df.loc[id]
-   plot = sns.lineplot(data=data, x=time(), y=glucose())
 
-   plot.axvline(pd.to_datetime("2023-08-08 7:45:35"))
+   event_data = events.set_index('id').loc[id]
+
+   # Convert timestamp column to datetime format
+   data[time()] = pd.to_datetime(data[time()])
+
+   #data['Day'] = data[time()].dt.date
+
+   plot = sns.relplot(data=data, kind="line", x=time(), y=glucose())
+
+   for ax in plot.axes.flat:
+      if isinstance(event_data, pd.DataFrame):
+         for index, row in event_data.iterrows():
+            ax.axvline(pd.to_datetime(row[time()]), color="orange")
+      else:
+         ax.axvline(pd.to_datetime(event_data[time()]), color="orange")
 
    plt.show()
 
@@ -45,42 +42,20 @@ def daily_plot(df, id, save=False):
       plot.savefig("./plots/" + str(id) + 'Daily.png')
 
 """
+Sequentially produces spaghetti plots for all the given patients
+@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
 """
-def spaghetti_plot_all(df):
+def spaghetti_plot_all(df, save=False):
    sns.set_theme()
    for id, data in df.groupby('id'):
-      spaghetti_plot(data, id)
+      spaghetti_plot(data, id, save)
 
 """
-
-def spaghetti_plot(df, id):
-   data = df.loc[id]
-   data.reset_index(inplace=True)
-   
-   datetimes = pd.to_datetime(data[time()])
-   date = datetimes.dt.date
-   times = datetimes.dt.time
-
-   time_data = pd.DataFrame()
-   time_data['Day'] = date
-   time_data['Time'] = times.astype(str)
-   time_data[glucose()] = data[glucose()]
-
-   time_data.set_index('Day', inplace=True)
-   time_data.sort_values(by=['Time', 'Day'], ascending=[True, True], inplace=True)
-
-   print(time_data)
-
-   plot = sns.relplot(data=time_data, kind="line", x='Time', y=glucose(), hue='Day')
-
-   
-   plt.show()
-
-   plot.savefig("./plots/" + str(id) + 'Spaghetti.png')
-
+Graphs a spaghetti plot for the given patient
+@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+@param id   the id of the patient whose data should be plotted
 """
-
-def spaghetti_plot(df, id):
+def spaghetti_plot(df, id, save=False):
    data = df.loc[id]
 
    data.reset_index(inplace=True)
@@ -100,6 +75,7 @@ def spaghetti_plot(df, id):
 
    plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
    plt.xticks(rotation=45)
-   plt.show()
+   plt.show() # might result in an empty plot based on osx or matplotlib version apparently
 
-   plt.savefig("./plots/" + str(id) + 'Spaghetti.png', bbox_inches='tight')
+   if save:
+      plt.savefig("./plots/" + str(id) + 'Spaghetti.png', bbox_inches='tight')

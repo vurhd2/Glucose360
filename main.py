@@ -15,9 +15,9 @@ def main():
    
    event_df = retrieve_event_data(df, events)
    #create_event_features(df, events)
-   #daily_plot(df, "NathanielBarrow", save=False)
-   #daily_plot_all(df, events)
-   spaghetti_plot_all(df)
+   #daily_plot(df, events, "NathanielBarrow", save=False)
+   daily_plot_all(df, events)
+   #spaghetti_plot_all(df)
 
 if __name__ == "__main__":
    main()
