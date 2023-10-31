@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from preprocessing import glucose, time
-
+from scipy.integrate import trapezoid
 
 def mean(df):
    return df[glucose()].mean()
@@ -35,6 +35,26 @@ def percent_time_in_range(df, low=70, high=180):
    time_in_range = len(in_range_df)
    total_time = len(df)
    return (100 * time_in_range / total_time) if total_time > 0 else np.nan
+
+# ------------------------- EVENT-BASED ----------------------------
+
+def AUC(df):
+   return trapezoid(df[glucose()],dx = 5)
+
+def iAUC(df, level):
+   data = df.copy()
+   data[glucose()] = data[glucose()] - level
+   data.loc[data[glucose()] < 0, glucose()] = 0
+   return AUC(data)
+
+def baseline(df):
+   return 10
+
+def peak(df):
+   return np.max(df[glucose()])
+
+def delta(df):
+   return peak(df) - baseline(df)
 
 """
 Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
