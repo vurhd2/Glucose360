@@ -101,7 +101,9 @@ def AGP_plot(df, id, save):
    data.reset_index(inplace=True)
 
    data[[pp.time(), pp.glucose()]] = pp.resample_data(data[[pp.time(), pp.glucose()]])
-   data['Time'] = data[pp.time()].dt.time.astype(str)
+   times = data[pp.time()] - data[pp.time()].dt.normalize()
+   # need to be in a DateTime format so seaborn can tell how to scale the x axis labels below
+   data['Time'] = pd.to_datetime(['1/1/1970' for i in range(data[pp.time()].size)]) + times
 
    data.set_index('Time', inplace=True)
 
@@ -111,19 +113,23 @@ def AGP_plot(df, id, save):
          'Time': time,
          '5th': measurements[pp.glucose()].quantile(0.05),
          '25th': measurements[pp.glucose()].quantile(0.25),
-         'median': measurements[pp.glucose()].median(),
+         'Median': measurements[pp.glucose()].median(),
          '75th': measurements[pp.glucose()].quantile(0.75),
          '95th': measurements[pp.glucose()].quantile(0.95)
       }
       agp_data = pd.concat([agp_data, pd.DataFrame.from_records([metrics])])
    
    agp_data = pd.melt(agp_data, id_vars=['Time'], 
-                      value_vars=['5th', '25th', 'median', '75th', '95th'],
+                      value_vars=['5th', '25th', 'Median', '75th', '95th'],
                       var_name='Metric', value_name=pp.glucose())
    
-   agp_data.sort_values(by=['Time'], inplace=True)
    print(agp_data)
-   plot = sns.relplot(data=agp_data, kind="line", x='Time', y=pp.glucose(), hue='Metric')
+
+   agp_data.sort_values(by=['Time'], inplace=True)
+
+   plot = sns.relplot(data=agp_data, kind="line", x='Time', y=pp.glucose(), hue='Metric', hue_order=['95th', '75th', 'Median', '25th', '5th'])
+   plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
+   plt.xticks(rotation=45)
 
    plt.show()
    
