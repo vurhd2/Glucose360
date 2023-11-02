@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from preprocessing import glucose, time
+from preprocessing import glucose, time, interval
 from scipy.integrate import trapezoid
 
 def mean(df):
@@ -39,7 +39,7 @@ def percent_time_in_range(df, low=70, high=180):
 # ------------------------- EVENT-BASED ----------------------------
 
 def AUC(df):
-   return trapezoid(df[glucose()],dx = 5)
+   return trapezoid(df[glucose()],dx = interval())
 
 def iAUC(df, level):
    data = df.copy()
@@ -48,7 +48,7 @@ def iAUC(df, level):
    return AUC(data)
 
 def baseline(df):
-   return 10
+   return df[time()].iloc[0]
 
 def peak(df):
    return np.max(df[glucose()])
@@ -60,7 +60,7 @@ def delta(df):
 Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
 returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
 """
-def create_features(dataset):
+def create_features(dataset, events=False):
    df = pd.DataFrame()
 
    for id, data in dataset.groupby('id'):
@@ -82,6 +82,9 @@ def create_features(dataset):
       features['a1c'] = a1c(data)
       features['gmi'] = gmi(data)
       features['percent time in range'] = percent_time_in_range(data)
+
+      if events:
+         features['AUC'] = AUC(data)
       
       df = pd.concat([df, pd.DataFrame.from_records([features])])
 

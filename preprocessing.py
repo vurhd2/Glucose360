@@ -6,18 +6,21 @@ Returns a Multiindexed Pandas DataFrame containing all of the csv data found in 
 @param path    the path of the directory to be parsed through
 @param glucose_col   the header of the column containing the glucose values
 """
-def import_directory(path, glucose_col="Glucose Value (mg/dL)", time_col="Timestamp (YYYY-MM-DDThh:mm:ss)"):
+def import_directory(path, glucose_col="Glucose Value (mg/dL)", time_col="Timestamp (YYYY-MM-DDThh:mm:ss)", interval=5):
    global glucose_name
    glucose_name = glucose_col
 
    global time_name
    time_name = time_col
 
+   global resample_interval
+   resample_interval = interval
+
    csv_files = glob.glob(path + "/*.csv")
 
    data = pd.DataFrame()
    for file in csv_files:
-      df = import_data(file)
+      df = import_data(file, interval)
 
       data = pd.concat([data, df])
 
@@ -29,7 +32,7 @@ def import_directory(path, glucose_col="Glucose Value (mg/dL)", time_col="Timest
 Returns a pre-processed Pandas DataFrame containing the timestamp and glucose data for the csv file at the given path
 @param path    the path of the csv file to be pre-processed and read into a Pandas Dataframe
 """
-def import_data(path):
+def import_data(path, interval):
    df = pd.read_csv(path)
 
    #id = df["Patient Info"].iloc[0] + df["Patient Info"].iloc[1] + df["Patient Info"].iloc[2]
@@ -45,7 +48,7 @@ def import_data(path):
    df[glucose_name] = pd.to_numeric(df[glucose_name])
 
    df = df[[time_name, glucose_name]].copy()
-   df = resample_data(df)
+   df = resample_data(df, interval)
    df['id'] = id
 
    return df
@@ -75,3 +78,6 @@ def glucose():
 
 def time():
    return time_name
+
+def interval():
+   return resample_interval
