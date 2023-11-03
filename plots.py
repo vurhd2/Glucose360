@@ -1,6 +1,5 @@
 import pandas as pd
 import seaborn as sns
-#from preprocessing import time, glucose, interval
 import preprocessing as pp
 import matplotlib.pyplot as plt
 
@@ -35,6 +34,7 @@ def daily_plot(df, events, id, save=False):
          else:
             ax.axvline(pd.to_datetime(event_data[pp.time()]), color="orange")
 
+   plt.ylim(35, 405)
    plt.show()
 
    if save:
@@ -74,6 +74,7 @@ def spaghetti_plot(df, id, save=False):
 
    plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
    plt.xticks(rotation=45)
+   plt.ylim(35, 405)
    plt.show() # might result in an empty plot based on osx or matplotlib version apparently
 
    if save:
@@ -122,14 +123,17 @@ def AGP_plot(df, id, save):
    agp_data = pd.melt(agp_data, id_vars=['Time'], 
                       value_vars=['5th', '25th', 'Median', '75th', '95th'],
                       var_name='Metric', value_name=pp.glucose())
-   
-   print(agp_data)
 
    agp_data.sort_values(by=['Time'], inplace=True)
 
    plot = sns.relplot(data=agp_data, kind="line", x='Time', y=pp.glucose(), hue='Metric', hue_order=['95th', '75th', 'Median', '25th', '5th'])
    plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
    plt.xticks(rotation=45)
+   plt.ylim(35, 405)
+
+   for ax in plot.axes.flat:
+      ax.axhline(70, color="green")
+      ax.axhline(180, color="green")
 
    plt.show()
    
