@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 
 """
-Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path
+Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
+The DataFrame holds columns for DateTime and Glucose Value, and is indexed by 'id'
 @param path    the path of the directory to be parsed through
 @param glucose_col   the header of the column containing the glucose values
 """
@@ -30,7 +31,8 @@ def import_directory(path, glucose_col="Glucose Value (mg/dL)", time_col="Timest
    return data
 
 """
-Returns a pre-processed Pandas DataFrame containing the timestamp and glucose data for the csv file at the given path
+Returns a pre-processed Pandas DataFrame containing the timestamp and glucose data for the csv file at the given path.
+The DataFrame returned has three columns, the DateTime, Glucose Value, and 'id' of the patient
 @param path    the path of the csv file to be pre-processed and read into a Pandas Dataframe
 """
 def import_data(path, interval=5):
@@ -55,7 +57,8 @@ def import_data(path, interval=5):
    return df
 
 """
-Resamples and (if needed) interpolates the given default-indexed DataFrame
+Resamples and (if needed) interpolates the given default-indexed DataFrame.
+Used mostly to preprocess the data in the csv files being imported in import_data().
 @param df         the DataFrame to be resampled and interpolated
 @param minutes    the length of the interval to be resampled into (in minutes)
 """
@@ -75,7 +78,8 @@ def resample_data(df, minutes=5):
    return resampled_df
 
 """
-Only interpolates NaN glucose values for time gaps that are less than the given number of minutes
+Only linearly interpolates NaN glucose values for time gaps that are less than the given number of minutes.
+Used mainly in preprocessing for csv files that are being imported in import_data().
 @param df         a DataFrame with only two columns, DateTime and Glucose Value
 @param max_gap    the maximum minute length of gaps that should be interpolated
 """
@@ -106,6 +110,9 @@ def interpolate_data(df, max_gap=30):
       df.loc[gap['start']:gap['end']] = df.loc[gap['start']:gap['end']].copy().interpolate('linear', limit_area='inside')
    
    return df
+
+
+# ---------------- Global Variables representing the DateTime, Glucose Value, and Resampling Interval column names ------------
 
 def glucose():
    return glucose_name

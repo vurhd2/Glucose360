@@ -4,23 +4,28 @@ import preprocessing as pp
 import matplotlib.pyplot as plt
 
 """
-Plots and saves all of the patients data in separate graphs
-@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+Graphs (and possibly saves) daily plots for all of the patients in the given DataFrame
+@param df      a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+@param events  a DataFrame containing event timeframes for some (or all) of the given patients
+@param save    a boolean indicating whether to download the graphs locally
 """
-def daily_plot_all(df, events, save=False):
+def daily_plot_all(df, events=None, save=False):
    sns.set_theme()
    for id, data in df.groupby('id'):
-      daily_plot(df, events, id, save)
+      daily_plot(data, id, events, save)
 
 """
-Plots and saves only the given patient's data
+Only graphs (and possibly saves) a daily plot for the given patient
 @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+@param events  a DataFrame containing event timeframes for some (or all) of the given patients
 @param id   the id of the patient whose data is graphed
+@param save a boolean indicating whether to download the graphs locally
 """
-def daily_plot(df, events, id, save=False):
+def daily_plot(df, id, events=None, save=False):
    data = df.loc[id]
 
    data[pp.time()] = pd.to_datetime(data[pp.time()])
+   data.reset_index(inplace=True)
 
    plot = sns.relplot(data=data, kind="line", x=pp.time(), y=pp.glucose())
 
@@ -43,6 +48,7 @@ def daily_plot(df, events, id, save=False):
 """
 Sequentially produces spaghetti plots for all the given patients
 @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+@param save a boolean indicating whether to download the graphs locally
 """
 def spaghetti_plot_all(df, save=False):
    sns.set_theme()
@@ -53,6 +59,7 @@ def spaghetti_plot_all(df, save=False):
 Graphs a spaghetti plot for the given patient
 @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
 @param id   the id of the patient whose data should be plotted
+@param save a boolean indicating whether to download the graphs locally
 """
 def spaghetti_plot(df, id, save=False):
    data = df.loc[id]
@@ -81,8 +88,9 @@ def spaghetti_plot(df, id, save=False):
       plt.savefig("./plots/" + str(id) + 'Spaghetti.png', bbox_inches='tight')
 
 """
-Plots and saves all of the patients data in separate graphs
-@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+Displays (and possibly saves) AGP Plots for each patient in the given DataFrame
+@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+@param save a boolean indicating whether to download the graphs locally
 """
 def AGP_plot_all(df, save=False):
    sns.set_theme()
@@ -90,11 +98,12 @@ def AGP_plot_all(df, save=False):
       AGP_plot(data, id, save)
 
 """
-Plots and saves only the given patient's data
-@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-@param id   the id of the patient whose data is graphed
+Displays (and possibly saves) an AGP Plot for only the given patient in the DataFrame
+@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+@param id   the id of the single patient whose data is being graphed
+@param save a boolean indicating whether to download the graphs locally
 """
-def AGP_plot(df, id, save):
+def AGP_plot(df, id, save=False):
    if pp.interval() > 5:
       raise Exception("Data needs to have measurement intervals at most 5 minutes long")
 
@@ -126,7 +135,9 @@ def AGP_plot(df, id, save):
 
    agp_data.sort_values(by=['Time'], inplace=True)
 
-   plot = sns.relplot(data=agp_data, kind="line", x='Time', y=pp.glucose(), hue='Metric', hue_order=['95th', '75th', 'Median', '25th', '5th'])
+   plot = sns.relplot(data=agp_data, kind="line", x='Time', y=pp.glucose(), hue='Metric', 
+                      hue_order=['95th', '75th', 'Median', '25th', '5th'],
+                      palette=['#DCDEEB', '#B1BBDD', '#415C95', '#B1BBDD', '#DCDEEB'])
    plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
    plt.xticks(rotation=45)
    plt.ylim(35, 405)
@@ -134,6 +145,11 @@ def AGP_plot(df, id, save):
    for ax in plot.axes.flat:
       ax.axhline(70, color="green")
       ax.axhline(180, color="green")
+
+      # shading between lines
+      plt.fill_between(ax.lines[0].get_xdata(), ax.lines[0].get_ydata(), ax.lines[1].get_ydata(), color='#E6E8F5')
+      plt.fill_between(ax.lines[1].get_xdata(), ax.lines[1].get_ydata(), ax.lines[3].get_ydata(), color='#B1BBDD')
+      plt.fill_between(ax.lines[3].get_xdata(), ax.lines[3].get_ydata(), ax.lines[4].get_ydata(), color='#E6E8F5')
 
    plt.show()
    

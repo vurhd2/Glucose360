@@ -41,7 +41,7 @@ def percent_time_in_range(df, low=70, high=180):
 def AUC(df):
    return trapezoid(df[glucose()],dx = interval())
 
-def iAUC(df, level):
+def iAUC(df, level=70):
    data = df.copy()
    data[glucose()] = data[glucose()] - level
    data.loc[data[glucose()] < 0, glucose()] = 0
@@ -85,6 +85,11 @@ def create_features(dataset, events=False):
 
       if events:
          features['AUC'] = AUC(data)
+         features['iAUC'] = iAUC(data)
+         features['baseline'] = baseline(data)
+         features['peak'] = peak(data)
+         features['delta'] = delta(data)
+
       
       df = pd.concat([df, pd.DataFrame.from_records([features])])
 

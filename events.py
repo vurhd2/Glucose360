@@ -44,4 +44,4 @@ Returns a multiindexed Pandas DataFrame containing metrics for the patient data 
 """
 def create_event_features(df, events, before="before", after="after", desc="description"):
    event_data = retrieve_event_data(df, events, before, after, desc)
-   return create_features(event_data)
+   return create_features(event_data, events=True)
