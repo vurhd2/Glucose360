@@ -5,29 +5,31 @@ import matplotlib.pyplot as plt
 
 """
 Graphs (and possibly saves) daily plots for all of the patients in the given DataFrame
-@param df      a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-@param events  a DataFrame containing event timeframes for some (or all) of the given patients
-@param save    a boolean indicating whether to download the graphs locally
+@param df         a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+@param events     a DataFrame containing event timeframes for some (or all) of the given patients
+@param chunk_day  a boolean indicating whether to split weekdays and weekends
+@param save       a boolean indicating whether to download the graphs locally
 """
-def daily_plot_all(df, events=None, save=False):
+def daily_plot_all(df, events=None, chunk_day=False, save=False):
    sns.set_theme()
    for id, data in df.groupby('id'):
-      daily_plot(data, id, events, save)
+      daily_plot(data, id, events, chunk_day, save)
 
 """
 Only graphs (and possibly saves) a daily plot for the given patient
 @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-@param events  a DataFrame containing event timeframes for some (or all) of the given patients
 @param id   the id of the patient whose data is graphed
+@param events  a DataFrame containing event timeframes for some (or all) of the given patients
+@param chunk_day  a boolean indicating whether to split weekdays and weekends
 @param save a boolean indicating whether to download the graphs locally
 """
-def daily_plot(df, id, events=None, save=False):
+def daily_plot(df, id, events=None, chunk_day=False, save=False):
    data = df.loc[id]
 
    data[pp.time()] = pd.to_datetime(data[pp.time()])
    data.reset_index(inplace=True)
 
-   plot = sns.relplot(data=data, kind="line", x=pp.time(), y=pp.glucose())
+   plot = sns.relplot(data=data, kind="line", x=pp.time(), y=pp.glucose(), col="Day Chunking" if chunk_day else None)
 
    # plotting vertical lines to represent the events
    if events is not None:
@@ -48,20 +50,22 @@ def daily_plot(df, id, events=None, save=False):
 """
 Sequentially produces spaghetti plots for all the given patients
 @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+@param chunk_day  a boolean indicating whether to split weekdays and weekends
 @param save a boolean indicating whether to download the graphs locally
 """
-def spaghetti_plot_all(df, save=False):
+def spaghetti_plot_all(df, chunk_day=False, save=False):
    sns.set_theme()
    for id, data in df.groupby('id'):
-      spaghetti_plot(data, id, save)
+      spaghetti_plot(data, id, chunk_day, save)
 
 """
 Graphs a spaghetti plot for the given patient
 @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
 @param id   the id of the patient whose data should be plotted
+@param chunk_day  a boolean indicating whether to split weekdays and weekends
 @param save a boolean indicating whether to download the graphs locally
 """
-def spaghetti_plot(df, id, save=False):
+def spaghetti_plot(df, id, chunk_day=False, save=False):
    data = df.loc[id]
 
    data.reset_index(inplace=True)
@@ -77,11 +81,12 @@ def spaghetti_plot(df, id, save=False):
 
    data.sort_values(by=[pp.time()], inplace=True)
 
-   plot = sns.relplot(data=data, kind="line", x='Time', y=pp.glucose(), hue='Day')
+   plot = sns.relplot(data=data, kind="line", x='Time', y=pp.glucose(), hue='Day', col="Day Chunking" if chunk_day else None)
 
    plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
-   plt.xticks(rotation=45)
    plt.ylim(35, 405)
+   for ax in plot.axes.flat:
+      plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
    plt.show() # might result in an empty plot based on osx or matplotlib version apparently
 
    if save:
