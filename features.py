@@ -57,6 +57,31 @@ def delta(df):
    return peak(df) - baseline(df)
 
 """
+Returns a Pandas Series containing the Timestamps of glucose excursions
+"""
+def excursions(df):
+   sd = std(df)
+   ave = mean(df)
+
+   outlier_df = df[(df[glucose()] >= ave + (2 * sd)) | (df[glucose()] <= ave - (2 * sd))].copy()
+   
+   # calculate the differences between each of the timestamps
+   outlier_df.reset_index(inplace=True)
+   outlier_df['timedeltas'] = outlier_df[time()].diff()[1:]
+   # find the gaps between the times
+   gaps = outlier_df[outlier_df['timedeltas'] > pd.Timedelta(minutes=interval())][time()]
+
+   print(gaps)
+
+   excursions = []
+   for i in range(len(gaps) - 1):
+      copy = outlier_df[(outlier_df[time()] >= gaps.iloc[i]) & (outlier_df[time()] <= gaps.iloc[i+1])][[time(), glucose()]].copy()
+      copy.set_index(time(), inplace=True)
+      excursions.append(copy.idxmax())
+   
+   return pd.Series(excursions)
+
+"""
 Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
 returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
 """
