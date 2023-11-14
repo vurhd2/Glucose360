@@ -68,14 +68,19 @@ def excursions(df):
    # calculate the differences between each of the timestamps
    outlier_df.reset_index(inplace=True)
    outlier_df['timedeltas'] = outlier_df[time()].diff()[1:]
+
    # find the gaps between the times
    gaps = outlier_df[outlier_df['timedeltas'] > pd.Timedelta(minutes=interval())][time()]
+   
+   # adding initial and final timestamps so excursions at the start/end are included
+   initial = pd.Series(df[time()].iloc[0] - pd.Timedelta(seconds=1))
+   final = pd.Series(df[time()].iloc[-1] + pd.Timedelta(seconds=1))
+   gaps = pd.concat([initial, gaps, final])
 
-   print(gaps)
-
+   # getting the timestamp of the peak within each excursion
    excursions = []
    for i in range(len(gaps) - 1):
-      copy = outlier_df[(outlier_df[time()] >= gaps.iloc[i]) & (outlier_df[time()] <= gaps.iloc[i+1])][[time(), glucose()]].copy()
+      copy = outlier_df[(outlier_df[time()] >= gaps.iloc[i]) & (outlier_df[time()] < gaps.iloc[i+1])][[time(), glucose()]].copy()
       copy.set_index(time(), inplace=True)
       excursions.append(copy.idxmax())
    
