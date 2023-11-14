@@ -137,7 +137,7 @@ def AGP_plot(df, id, save=False):
 
    plot = sns.relplot(data=agp_data, kind="line", x='Time', y=pp.glucose(), hue='Metric', 
                       hue_order=['95th', '75th', 'Median', '25th', '5th'],
-                      palette=['#DCDEEB', '#B1BBDD', '#415C95', '#B1BBDD', '#DCDEEB'])
+                      palette=['#869FCE', '#97A8CB', '#183260', '#97A8CB', '#869FCE'])
    plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
    plt.xticks(rotation=45)
    plt.ylim(35, 405)
@@ -147,9 +147,9 @@ def AGP_plot(df, id, save=False):
       ax.axhline(180, color="green")
 
       # shading between lines
-      plt.fill_between(ax.lines[0].get_xdata(), ax.lines[0].get_ydata(), ax.lines[1].get_ydata(), color='#E6E8F5')
-      plt.fill_between(ax.lines[1].get_xdata(), ax.lines[1].get_ydata(), ax.lines[3].get_ydata(), color='#B1BBDD')
-      plt.fill_between(ax.lines[3].get_xdata(), ax.lines[3].get_ydata(), ax.lines[4].get_ydata(), color='#E6E8F5')
+      plt.fill_between(ax.lines[0].get_xdata(), ax.lines[0].get_ydata(), ax.lines[1].get_ydata(), color='#C9D4E9')
+      plt.fill_between(ax.lines[1].get_xdata(), ax.lines[1].get_ydata(), ax.lines[3].get_ydata(), color='#97A8CB')
+      plt.fill_between(ax.lines[3].get_xdata(), ax.lines[3].get_ydata(), ax.lines[4].get_ydata(), color='#C9D4E9')
 
    plt.show()
    
