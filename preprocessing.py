@@ -52,6 +52,7 @@ def import_data(path, interval=5):
 
    df = df[[time_name, glucose_name]].copy()
    df = resample_data(df, interval)
+   df = chunk_day(chunk_time(df))
    df['id'] = id
 
    return df
@@ -109,6 +110,17 @@ def interpolate_data(df, max_gap=30):
    for gap in gaps:
       df.loc[gap['start']:gap['end']] = df.loc[gap['start']:gap['end']].copy().interpolate('linear', limit_area='inside')
    
+   return df
+
+def chunk_time(df):
+   times = df[time()] - df[time()].dt.normalize()
+   is_waking = (times >= pd.Timedelta(hours=8)) & (times <= pd.Timedelta(hours=22))
+   df["Time Chunking"] = is_waking.replace({True: "Waking", False: "Sleeping"})
+   return df
+
+def chunk_day(df):
+   is_weekend = df[time()].dt.dayofweek > 4
+   df["Day Chunking"] = is_weekend.replace({True: "Weekend", False: "Weekday"})
    return df
 
 
