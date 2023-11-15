@@ -82,7 +82,12 @@ def excursions(df):
    for i in range(len(gaps) - 1):
       copy = outlier_df[(outlier_df[time()] >= gaps.iloc[i]) & (outlier_df[time()] < gaps.iloc[i+1])][[time(), glucose()]].copy()
       copy.set_index(time(), inplace=True)
-      excursions.append(copy.idxmax())
+      if np.min(copy) > ave:
+         # local max
+         excursions.append(copy.idxmax())
+      else:
+         # local min
+         excursions.append(copy.idxmin())
    
    return pd.Series(excursions)
 
