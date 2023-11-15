@@ -91,6 +91,33 @@ def excursions(df):
    
    return pd.Series(excursions)
 
+def MAGE(df):
+   moving_averages = pd.DataFrame()
+   moving_averages[glucose()] = df[glucose()].rolling(5, center=True).mean().copy()
+
+   roc = "rate of change"
+   moving_averages[roc] = moving_averages.pct_change()
+   
+   moving_averages.dropna(subset=[roc, glucose()], inplace=True)
+
+   mask1 = (moving_averages[roc] < 0)
+   mask2 = (moving_averages[roc] > 0).shift()
+
+   mask3 = (moving_averages[roc] > 0)
+   mask4 = (moving_averages[roc] < 0).shift()
+
+   # getting all peaks and nadirs in smoothed curve
+   extrema = moving_averages[(moving_averages[roc] == 0) | (mask1 & mask2) | (mask3 & mask4)][glucose()]
+
+   amplitudes = []
+   for i in range(len(extrema) - 1):
+      amplitudes.append(abs(extrema.iloc[i+1] - extrema.iloc[i]))
+   
+   amplitudes = pd.Series(amplitudes)
+   # removing duplicate consecutive peaks/nadirs
+   amplitudes = amplitudes.loc[amplitudes.diff() != 0]
+   return amplitudes[amplitudes > std(df)].mean()
+
 """
 Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
 returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
@@ -117,6 +144,7 @@ def create_features(dataset, events=False):
       features['a1c'] = a1c(data)
       features['gmi'] = gmi(data)
       features['percent time in range'] = percent_time_in_range(data)
+      features['MAGE'] = MAGE(data)
 
       if events:
          features['AUC'] = AUC(data)
