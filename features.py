@@ -94,9 +94,10 @@ def excursions(df):
 def MAGE(df):
    moving_averages = pd.DataFrame()
    moving_averages[glucose()] = df[glucose()].rolling(5, center=True).mean().copy()
+   moving_averages[time()] = df[time()]
 
    roc = "rate of change"
-   moving_averages[roc] = moving_averages.pct_change()
+   moving_averages[roc] = moving_averages[glucose()].pct_change()
    
    moving_averages.dropna(subset=[roc, glucose()], inplace=True)
 
@@ -107,11 +108,14 @@ def MAGE(df):
    mask4 = (moving_averages[roc] < 0).shift()
 
    # getting all peaks and nadirs in smoothed curve
-   extrema = moving_averages[(moving_averages[roc] == 0) | (mask1 & mask2) | (mask3 & mask4)][glucose()]
+   extrema = pd.DataFrame()
+   extrema[[time(), glucose()]] = moving_averages[(moving_averages[roc] == 0) | (mask1 & mask2) | (mask3 & mask4)][[time(), glucose()]]
 
    amplitudes = []
-   for i in range(len(extrema) - 1):
-      amplitudes.append(abs(extrema.iloc[i+1] - extrema.iloc[i]))
+   df.set_index(time(), inplace=True)
+   for i in range(len(extrema[time()]) - 1):
+      timestamp = lambda x: extrema[time()].iloc[x]
+      amplitudes.append(abs(df[glucose()].loc[timestamp(i+1)] - df[glucose()].loc[timestamp(i)]))
    
    amplitudes = pd.Series(amplitudes)
    # removing duplicate consecutive peaks/nadirs
