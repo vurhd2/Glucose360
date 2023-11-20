@@ -91,36 +91,82 @@ def excursions(df):
    
    return pd.Series(excursions)
 
+"""
 def MAGE(df):
    moving_averages = pd.DataFrame()
-   moving_averages[glucose()] = df[glucose()].rolling(5, center=True).mean().copy()
+   moving_averages["sma"] = df[glucose()].rolling(5, center=True).mean().copy()
+   moving_averages["lma"] = df[glucose()].rolling(32, center=True).mean().copy()
    moving_averages[time()] = df[time()]
 
-   roc = "rate of change"
-   moving_averages[roc] = moving_averages[glucose()].pct_change()
-   
-   moving_averages.dropna(subset=[roc, glucose()], inplace=True)
+   moving_averages.dropna(subset=["sma", "lma"], inplace=True)
+   moving_averages["crosses"] = moving_averages["lma"] - moving_averages["sma"]
 
-   mask1 = (moving_averages[roc] < 0)
-   mask2 = (moving_averages[roc] > 0).shift()
+   mask1 = (moving_averages["crosses"] < 0)
+   mask2 = (moving_averages["crosses"] > 0).shift()
 
-   mask3 = (moving_averages[roc] > 0)
-   mask4 = (moving_averages[roc] < 0).shift()
+   mask3 = (moving_averages["crosses"] > 0)
+   mask4 = (moving_averages["crosses"] < 0).shift()
 
    # getting all peaks and nadirs in smoothed curve
    extrema = pd.DataFrame()
-   extrema[[time(), glucose()]] = moving_averages[(moving_averages[roc] == 0) | (mask1 & mask2) | (mask3 & mask4)][[time(), glucose()]]
+   extrema = moving_averages[(moving_averages["crosses"] == 0) | (mask1 & mask2) | (mask3 & mask4)][time()]
+
+   print(extrema)
 
    amplitudes = []
    df.set_index(time(), inplace=True)
-   for i in range(len(extrema[time()]) - 1):
-      timestamp = lambda x: extrema[time()].iloc[x]
+   for i in range(len(extrema) - 1):
+      timestamp = lambda x: extrema.iloc[x]
       amplitudes.append(abs(df[glucose()].loc[timestamp(i+1)] - df[glucose()].loc[timestamp(i)]))
    
    amplitudes = pd.Series(amplitudes)
    # removing duplicate consecutive peaks/nadirs
    amplitudes = amplitudes.loc[amplitudes.diff() != 0]
    return amplitudes[amplitudes > std(df)].mean()
+"""
+
+def MAGE(df):
+   data = pd.DataFrame()
+   data[glucose()] = df[glucose()]
+
+   roc = "rate of change"
+   data[roc] = df[glucose()].pct_change()
+   
+   data.dropna(subset=[roc, glucose()], inplace=True)
+
+   mask1 = (data[roc] < 0)
+   mask2 = (data[roc] > 0).shift()
+   mask3 = (data[roc] > 0)
+   mask4 = (data[roc] < 0).shift()
+
+   # getting all peaks and nadirs in smoothed curve
+   extrema = data[(data[roc] == 0) | (mask1 & mask2) | (mask3 & mask4)].copy()
+   extrema = extrema[extrema[glucose()].diff() != 0] # getting rid of extrema plateaus
+
+   extrema.reset_index(inplace=True)
+   extrema = extrema[glucose()].copy()
+
+   valid_extrema = [extrema.iloc[0]]
+   sd = std(df)
+   skip = False # boolean to skip certain iterations of for loop
+   for i in range(1, len(extrema) - 1):
+      if skip:
+         skip = False
+         continue
+
+      glu = lambda x: extrema.loc[x]
+      is_valid = lambda x, y: abs(x - y) >= sd 
+
+      current = glu(i)
+
+      # if both amplitude segments are larger than the stdev, the extrema should be kept for MAGE calculations 
+      if is_valid(current, valid_extrema[-1]) and is_valid(current, glu(i+1)):
+         valid_extrema.append(current)
+      else:
+         skip = True
+   
+   amplitude = lambda x: abs(valid_extrema[x] - valid_extrema[x+1])
+   return pd.Series([amplitude(i) for i in range(len(valid_extrema) - 1)]).mean()
 
 """
 Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
