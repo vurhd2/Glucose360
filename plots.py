@@ -10,7 +10,7 @@ Graphs (and possibly saves) daily plots for all of the patients in the given Dat
 @param chunk_day  a boolean indicating whether to split weekdays and weekends
 @param save       a boolean indicating whether to download the graphs locally
 """
-def daily_plot_all(df, events=None, chunk_day=False, save=False):
+def daily_plot_all(df: pd.DataFrame, events: pd.DataFrame = None, chunk_day: bool = False, save: bool = False):
    sns.set_theme()
    for id, data in df.groupby('id'):
       daily_plot(data, id, events, chunk_day, save)
@@ -23,7 +23,7 @@ Only graphs (and possibly saves) a daily plot for the given patient
 @param chunk_day  a boolean indicating whether to split weekdays and weekends
 @param save a boolean indicating whether to download the graphs locally
 """
-def daily_plot(df, id, events=None, chunk_day=False, save=False):
+def daily_plot(df: pd.DataFrame, id: str, events: pd.DataFrame = None, chunk_day: bool = False, save: bool = False):
    data = df.loc[id]
 
    data[pp.time()] = pd.to_datetime(data[pp.time()])
@@ -53,7 +53,7 @@ Sequentially produces spaghetti plots for all the given patients
 @param chunk_day  a boolean indicating whether to split weekdays and weekends
 @param save a boolean indicating whether to download the graphs locally
 """
-def spaghetti_plot_all(df, chunk_day=False, save=False):
+def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, save: bool = False):
    sns.set_theme()
    for id, data in df.groupby('id'):
       spaghetti_plot(data, id, chunk_day, save)
@@ -65,7 +65,7 @@ Graphs a spaghetti plot for the given patient
 @param chunk_day  a boolean indicating whether to split weekdays and weekends
 @param save a boolean indicating whether to download the graphs locally
 """
-def spaghetti_plot(df, id, chunk_day=False, save=False):
+def spaghetti_plot(df: pd.DataFrame, id: str, chunk_day: bool = False, save: bool = False):
    data = df.loc[id]
 
    data.reset_index(inplace=True)
@@ -97,7 +97,7 @@ Displays (and possibly saves) AGP Plots for each patient in the given DataFrame
 @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
 @param save a boolean indicating whether to download the graphs locally
 """
-def AGP_plot_all(df, save=False):
+def AGP_plot_all(df: pd.DataFrame, save: bool = False):
    sns.set_theme()
    for id, data in df.groupby('id'):
       AGP_plot(data, id, save)
@@ -108,7 +108,7 @@ Displays (and possibly saves) an AGP Plot for only the given patient in the Data
 @param id   the id of the single patient whose data is being graphed
 @param save a boolean indicating whether to download the graphs locally
 """
-def AGP_plot(df, id, save=False):
+def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
    if pp.interval() > 5:
       raise Exception("Data needs to have measurement intervals at most 5 minutes long")
 

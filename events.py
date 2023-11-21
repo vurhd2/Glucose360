@@ -11,7 +11,8 @@ Returns a multiindexed Pandas DataFrame containing only the patient data during 
 @param after   name of the column specifying the amount of hours after to include
 @param desc    name of the column describing this particular event
 """
-def retrieve_event_data(df, events, before="before", after="after", desc="description"):
+def retrieve_event_data(df: pd.DataFrame, events: pd.DataFrame, before: str = "before", 
+                        after: str = "after", desc: str = "description") -> pd.DataFrame:
    event_data = pd.DataFrame()
 
    for index, row in events.iterrows():
@@ -42,6 +43,7 @@ Returns a multiindexed Pandas DataFrame containing metrics for the patient data 
 @param after   name of the column specifying the amount of hours after to include
 @param desc    name of the column describing this particular event 
 """
-def create_event_features(df, events, before="before", after="after", desc="description"):
+def create_event_features(df: pd.DataFrame, events: pd.DataFrame, before: str = "before", 
+                          after: str = "after", desc: str = "description") -> pd.DataFrame:
    event_data = retrieve_event_data(df, events, before, after, desc)
    return create_features(event_data, events=True)

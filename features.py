@@ -3,10 +3,10 @@ import numpy as np
 from preprocessing import glucose, time, interval
 from scipy.integrate import trapezoid
 
-def mean(df):
+def mean(df: pd.DataFrame) -> float:
    return df[glucose()].mean()
 
-def summary_stats(df):
+def summary_stats(df: pd.DataFrame) -> list:
    min = df[glucose()].min()
    first = df[glucose()].quantile(0.25)
    median = df[glucose()].median()
@@ -15,13 +15,13 @@ def summary_stats(df):
 
    return [min, first, median, third, max]
 
-def std(df):
+def std(df: pd.DataFrame) -> float:
    return df[glucose()].std()
 
-def a1c(df):
+def a1c(df: pd.DataFrame) -> float:
    return (46.7 + mean(df)) / 28.7
 
-def gmi(df):
+def gmi(df: pd.DataFrame) -> float:
    return (0.02392 * mean(df)) + 3.31
 
 """
@@ -30,7 +30,7 @@ Returns the percent of total time the glucose levels were between the given lowe
 @param low: the lower bound of the acceptable glucose values
 @param high: the upper bound of the acceptable glucose values
 """
-def percent_time_in_range(df, low=70, high=180):
+def percent_time_in_range(df: pd.DataFrame, low: int = 70, high: int = 180) -> float:
    in_range_df = df[(df[glucose()] <= high) & (df[glucose()] >= low)]
    time_in_range = len(in_range_df)
    total_time = len(df)
@@ -38,28 +38,28 @@ def percent_time_in_range(df, low=70, high=180):
 
 # ------------------------- EVENT-BASED ----------------------------
 
-def AUC(df):
+def AUC(df: pd.DataFrame) -> float:
    return trapezoid(df[glucose()],dx = interval())
 
-def iAUC(df, level=70):
+def iAUC(df: pd.DataFrame, level: int = 70) -> float:
    data = df.copy()
    data[glucose()] = data[glucose()] - level
    data.loc[data[glucose()] < 0, glucose()] = 0
    return AUC(data)
 
-def baseline(df):
+def baseline(df: pd.DataFrame) -> float:
    return df[time()].iloc[0]
 
-def peak(df):
+def peak(df: pd.DataFrame) -> float:
    return np.max(df[glucose()])
 
-def delta(df):
+def delta(df: pd.DataFrame) -> float:
    return peak(df) - baseline(df)
 
 """
 Returns a Pandas Series containing the Timestamps of glucose excursions
 """
-def excursions(df):
+def excursions(df: pd.DataFrame) -> pd.Series:
    sd = std(df)
    ave = mean(df)
 
@@ -91,41 +91,7 @@ def excursions(df):
    
    return pd.Series(excursions)
 
-"""
-def MAGE(df):
-   moving_averages = pd.DataFrame()
-   moving_averages["sma"] = df[glucose()].rolling(5, center=True).mean().copy()
-   moving_averages["lma"] = df[glucose()].rolling(32, center=True).mean().copy()
-   moving_averages[time()] = df[time()]
-
-   moving_averages.dropna(subset=["sma", "lma"], inplace=True)
-   moving_averages["crosses"] = moving_averages["lma"] - moving_averages["sma"]
-
-   mask1 = (moving_averages["crosses"] < 0)
-   mask2 = (moving_averages["crosses"] > 0).shift()
-
-   mask3 = (moving_averages["crosses"] > 0)
-   mask4 = (moving_averages["crosses"] < 0).shift()
-
-   # getting all peaks and nadirs in smoothed curve
-   extrema = pd.DataFrame()
-   extrema = moving_averages[(moving_averages["crosses"] == 0) | (mask1 & mask2) | (mask3 & mask4)][time()]
-
-   print(extrema)
-
-   amplitudes = []
-   df.set_index(time(), inplace=True)
-   for i in range(len(extrema) - 1):
-      timestamp = lambda x: extrema.iloc[x]
-      amplitudes.append(abs(df[glucose()].loc[timestamp(i+1)] - df[glucose()].loc[timestamp(i)]))
-   
-   amplitudes = pd.Series(amplitudes)
-   # removing duplicate consecutive peaks/nadirs
-   amplitudes = amplitudes.loc[amplitudes.diff() != 0]
-   return amplitudes[amplitudes > std(df)].mean()
-"""
-
-def MAGE(df):
+def MAGE(df: pd.DataFrame) -> float:
    data = pd.DataFrame()
    data[glucose()] = df[glucose()]
 
@@ -166,13 +132,15 @@ def MAGE(df):
          skip = True
    
    amplitude = lambda x: abs(valid_extrema[x] - valid_extrema[x+1])
-   return pd.Series([amplitude(i) for i in range(len(valid_extrema) - 1)]).mean()
+   amplitudes = pd.Series([amplitude(i * 2) for i in range(int(len(valid_extrema) / 2))])
+
+   return amplitudes.mean()
 
 """
 Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
 returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
 """
-def create_features(dataset, events=False):
+def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame:
    df = pd.DataFrame()
 
    for id, data in dataset.groupby('id'):

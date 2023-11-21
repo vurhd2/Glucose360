@@ -8,7 +8,8 @@ The DataFrame holds columns for DateTime and Glucose Value, and is indexed by 'i
 @param path    the path of the directory to be parsed through
 @param glucose_col   the header of the column containing the glucose values
 """
-def import_directory(path, glucose_col="Glucose Value (mg/dL)", time_col="Timestamp (YYYY-MM-DDThh:mm:ss)", interval=5):
+def import_directory(path: str, glucose_col: str = "Glucose Value (mg/dL)", 
+                     time_col: str = "Timestamp (YYYY-MM-DDThh:mm:ss)", interval: int = 5) -> pd.DataFrame:
    global glucose_name
    glucose_name = glucose_col
 
@@ -35,7 +36,7 @@ Returns a pre-processed Pandas DataFrame containing the timestamp and glucose da
 The DataFrame returned has three columns, the DateTime, Glucose Value, and 'id' of the patient
 @param path    the path of the csv file to be pre-processed and read into a Pandas Dataframe
 """
-def import_data(path, interval=5):
+def import_data(path: str, interval: int = 5) -> pd.DataFrame:
    df = pd.read_csv(path)
 
    #id = df["Patient Info"].iloc[0] + df["Patient Info"].iloc[1] + df["Patient Info"].iloc[2]
@@ -63,7 +64,7 @@ Used mostly to preprocess the data in the csv files being imported in import_dat
 @param df         the DataFrame to be resampled and interpolated
 @param minutes    the length of the interval to be resampled into (in minutes)
 """
-def resample_data(df, minutes=5):
+def resample_data(df: pd.DataFrame, minutes: int = 5) -> pd.DataFrame:
    # Sort the DataFrame by datetime
    df.sort_values(by=[time_name], inplace=True)
    
@@ -84,7 +85,7 @@ Used mainly in preprocessing for csv files that are being imported in import_dat
 @param df         a DataFrame with only two columns, DateTime and Glucose Value
 @param max_gap    the maximum minute length of gaps that should be interpolated
 """
-def interpolate_data(df, max_gap=30):
+def interpolate_data(df: pd.DataFrame, max_gap: int = 45) -> pd.DataFrame:
    df.reset_index(inplace=True)
 
    gaps = []
@@ -112,13 +113,19 @@ def interpolate_data(df, max_gap=30):
    
    return df
 
-def chunk_time(df):
+"""
+Adds a new column specifying whether the values occur during a waking or sleeping period
+"""
+def chunk_time(df: pd.DataFrame) -> pd.DataFrame:
    times = df[time()] - df[time()].dt.normalize()
    is_waking = (times >= pd.Timedelta(hours=8)) & (times <= pd.Timedelta(hours=22))
    df["Time Chunking"] = is_waking.replace({True: "Waking", False: "Sleeping"})
    return df
 
-def chunk_day(df):
+"""
+Adds a new column specifying whether the values occur during the week or during the weekend
+"""
+def chunk_day(df: pd.DataFrame) -> pd.DataFrame:
    is_weekend = df[time()].dt.dayofweek > 4
    df["Day Chunking"] = is_weekend.replace({True: "Weekend", False: "Weekday"})
    return df
@@ -126,11 +133,11 @@ def chunk_day(df):
 
 # ---------------- Global Variables representing the DateTime, Glucose Value, and Resampling Interval column names ------------
 
-def glucose():
+def glucose() -> str:
    return glucose_name
 
-def time():
+def time() -> str:
    return time_name
 
-def interval():
+def interval() -> int:
    return resample_interval
