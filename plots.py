@@ -30,6 +30,8 @@ def daily_plot(df: pd.DataFrame, id: str, events: pd.DataFrame = None, chunk_day
    data.reset_index(inplace=True)
 
    plot = sns.relplot(data=data, kind="line", x=pp.time(), y=pp.glucose(), col="Day Chunking" if chunk_day else None)
+   plot.fig.subplots_adjust(top=.9)
+   plot.fig.suptitle(f"Glucose (mg/dL) vs. Timestamp for {id}")
 
    # plotting vertical lines to represent the events
    if events is not None:
@@ -82,6 +84,9 @@ def spaghetti_plot(df: pd.DataFrame, id: str, chunk_day: bool = False, save: boo
    data.sort_values(by=[pp.time()], inplace=True)
 
    plot = sns.relplot(data=data, kind="line", x='Time', y=pp.glucose(), hue='Day', col="Day Chunking" if chunk_day else None)
+
+   plot.fig.subplots_adjust(top=.9)
+   plot.fig.suptitle(f"Spaghetti Plot for {id}")
 
    plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
    plt.ylim(35, 405)
@@ -143,6 +148,10 @@ def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
    plot = sns.relplot(data=agp_data, kind="line", x='Time', y=pp.glucose(), hue='Metric', 
                       hue_order=['95th', '75th', 'Median', '25th', '5th'],
                       palette=['#869FCE', '#97A8CB', '#183260', '#97A8CB', '#869FCE'])
+   
+   plot.fig.subplots_adjust(top=.9)
+   plot.fig.suptitle(f"AGP Plot for {id}")
+
    plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]), (f"{hour:02d}:00" for hour in range(24)))
    plt.xticks(rotation=45)
    plt.ylim(35, 405)
