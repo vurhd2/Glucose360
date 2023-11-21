@@ -39,8 +39,12 @@ def import_data(path: str, interval: int = 5) -> pd.DataFrame:
    df['id'] = id
 
    df = df.dropna(subset=[glucose_name])
-   df = df.replace("Low", 40)
-   df = df.replace("High", 400)
+
+   LOW = 40
+   HIGH = 400
+
+   df = df.replace("Low", LOW)
+   df = df.replace("High", HIGH)
 
    df[time_name] = pd.to_datetime(df[time_name], format='%Y-%m-%dT%H:%M:%S')
 
