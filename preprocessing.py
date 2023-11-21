@@ -33,6 +33,8 @@ def import_directory(path: str, glucose_col: str = "Glucose Value (mg/dL)",
    data = pd.concat(import_data(file, interval) for file in csv_files)
    data = data.set_index(['id'])
 
+   print(f"{len(csv_files)} .csv files were found in the specified directory.")
+
    return data
 
 """
