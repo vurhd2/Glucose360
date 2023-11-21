@@ -21,12 +21,7 @@ def import_directory(path: str, glucose_col: str = "Glucose Value (mg/dL)",
 
    csv_files = glob.glob(path + "/*.csv")
 
-   data = pd.DataFrame()
-   for file in csv_files:
-      df = import_data(file, interval)
-
-      data = pd.concat([data, df])
-
+   data = pd.concat(import_data(file, interval) for file in csv_files)
    data = data.set_index(['id'])
 
    return data
