@@ -2,6 +2,10 @@ import glob
 import pandas as pd
 import numpy as np
 
+# globals for glucose values to replace "Low" and "High" with in the CGM data
+LOW = 40
+HIGH = 400
+
 """
 Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
 The DataFrame holds columns for DateTime and Glucose Value, and is indexed by 'id'
@@ -39,9 +43,6 @@ def import_data(path: str, interval: int = 5) -> pd.DataFrame:
    df['id'] = id
 
    df = df.dropna(subset=[glucose_name])
-
-   LOW = 40
-   HIGH = 400
 
    df = df.replace("Low", LOW)
    df = df.replace("High", HIGH)
