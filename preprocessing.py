@@ -1,3 +1,4 @@
+import os
 import glob
 import pandas as pd
 import numpy as np
@@ -14,6 +15,10 @@ The DataFrame holds columns for DateTime and Glucose Value, and is indexed by 'i
 """
 def import_directory(path: str, glucose_col: str = "Glucose Value (mg/dL)", 
                      time_col: str = "Timestamp (YYYY-MM-DDThh:mm:ss)", interval: int = 5) -> pd.DataFrame:
+   
+   if not os.path.isdir(path):
+      raise ValueError("Directory does not exist") 
+   
    global glucose_name
    glucose_name = glucose_col
 
