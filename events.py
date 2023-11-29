@@ -11,28 +11,38 @@ Returns a multiindexed Pandas DataFrame containing only the patient data during 
 @param after   name of the column specifying the amount of hours after to include
 @param desc    name of the column describing this particular event
 """
-def retrieve_event_data(df: pd.DataFrame, events: pd.DataFrame, before: str = "before", 
-                        after: str = "after", desc: str = "description") -> pd.DataFrame:
-   event_data = pd.DataFrame()
 
-   for index, row in events.iterrows():
-      id = row['id']
 
-      datetime = pd.Timestamp(row[time()])
-      initial = datetime - pd.Timedelta(row[before], 'h')
-      final = datetime + pd.Timedelta(row[after], 'h')
+def retrieve_event_data(
+    df: pd.DataFrame,
+    events: pd.DataFrame,
+    before: str = "before",
+    after: str = "after",
+    desc: str = "description",
+) -> pd.DataFrame:
+    event_data = pd.DataFrame()
 
-      patient_data = df.loc[id]
-      data = patient_data[(patient_data[time()] >= initial) & (patient_data[time()] <= final)].copy()
-      
-      data['id'] = id
-      data[desc] = row[desc]
+    for index, row in events.iterrows():
+        id = row["id"]
 
-      event_data = pd.concat([event_data, data])
+        datetime = pd.Timestamp(row[time()])
+        initial = datetime - pd.Timedelta(row[before], "h")
+        final = datetime + pd.Timedelta(row[after], "h")
 
-   event_data = event_data.set_index(['id'])
+        patient_data = df.loc[id]
+        data = patient_data[
+            (patient_data[time()] >= initial) & (patient_data[time()] <= final)
+        ].copy()
 
-   return event_data
+        data["id"] = id
+        data[desc] = row[desc]
+
+        event_data = pd.concat([event_data, data])
+
+    event_data = event_data.set_index(["id"])
+
+    return event_data
+
 
 """
 Returns a multiindexed Pandas DataFrame containing metrics for the patient data during their respective 'events'
@@ -43,7 +53,14 @@ Returns a multiindexed Pandas DataFrame containing metrics for the patient data 
 @param after   name of the column specifying the amount of hours after to include
 @param desc    name of the column describing this particular event 
 """
-def create_event_features(df: pd.DataFrame, events: pd.DataFrame, before: str = "before", 
-                          after: str = "after", desc: str = "description") -> pd.DataFrame:
-   event_data = retrieve_event_data(df, events, before, after, desc)
-   return create_features(event_data, events=True)
+
+
+def create_event_features(
+    df: pd.DataFrame,
+    events: pd.DataFrame,
+    before: str = "before",
+    after: str = "after",
+    desc: str = "description",
+) -> pd.DataFrame:
+    event_data = retrieve_event_data(df, events, before, after, desc)
+    return create_features(event_data, events=True)
