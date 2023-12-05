@@ -115,13 +115,40 @@ def excursions(df: pd.DataFrame) -> pd.Series:
 
     return pd.Series(excursions)
 
+def ADRR(df: pd.DataFrame):
+   data = df.copy()
 
-def MAGE(df, short_ma=5, long_ma=32):
+   # Convert time to date
+   data['date'] = pd.to_datetime(data[time()]).dt.date
+
+   data = data.dropna(subset=[glucose()])
+
+   data['bgi'] = (np.log(data[glucose()]) ** 1.084) - 5.381
+   data['right'] = 22.7 * np.maximum(data['bgi'], 0) ** 2
+   data['left'] = 22.7 * np.minimum(data['bgi'], 0) ** 2
+
+   adrr = data.groupby(['date']).apply(lambda df: np.max(df['left']) + np.max(df['right'])).mean()
+   return adrr
+
+
+def MAGE(df: pd.DataFrame, short_ma: int = 9) -> float:
     data = df.copy()
-    data["MA_Short"] = data[glucose()].rolling(window=short_ma, min_periods=1).mean()
-    data["MA_Long"] = data[glucose()].rolling(window=long_ma, min_periods=1).mean()
+    data["MA_Short"] = data[glucose()].rolling(window=short_ma, min_periods=1, center=True).mean()
 
-    crossings = np.where(np.diff(np.sign(data["MA_Short"] - data["MA_Long"])))[0]
+    signs = np.sign(data["MA_Short"].diff())
+    signs[signs==0] = -1
+    crossings = np.where(np.diff(signs))[0]
+
+    glu = lambda x: data[glucose()].iloc[x]
+    peak_start = 0 if glu(0) < glu(1) else 1
+    valley_start = abs(peak_start - 1)
+    
+    peaks = [max([glu(crossings[(index * 2) + peak_start]), glu(crossings[(index * 2) + 1 + peak_start])]) for index in range(peak_start, int((len(crossings) + valley_start) / 2))]
+    valleys = [min([glu(crossings[(index * 2) + valley_start]), glu(crossings[(index * 2) + 1 + valley_start])]) for index in range(valley_start, int((len(crossings) + peak_start) / 2))]
+    
+    #validated_peaks = peaks.copy()
+    #validated_valleys = valleys.copy() 
+
 
     excursions = []
     for i in range(len(crossings) - 1):
@@ -214,7 +241,8 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["a1c"] = a1c(data)
         features["gmi"] = gmi(data)
         features["percent time in range"] = percent_time_in_range(data)
-        features["MAGE"] = MAGE(data)
+        features["ADRR"] = ADRR(data)
+        #features["MAGE"] = MAGE(data)
 
         if events:
             features["AUC"] = AUC(data)
