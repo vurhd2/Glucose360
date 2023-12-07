@@ -2,6 +2,7 @@ import os
 import glob
 import pandas as pd
 import numpy as np
+import configparser
 
 # globals for glucose values to replace "Low" and "High" with in the CGM data
 LOW = 40
@@ -32,6 +33,11 @@ def import_directory(
 
     global resample_interval
     resample_interval = interval
+
+    config = configparser.ConfigParser()
+    config['variables'] = {'glucose': glucose_col, 'time': time_col, 'interval': interval}
+    with open('config.ini', 'w') as configfile:
+      config.write(configfile)
 
     csv_files = glob.glob(path + "/*.csv")
 

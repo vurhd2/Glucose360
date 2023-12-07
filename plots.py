@@ -2,6 +2,13 @@ import pandas as pd
 import seaborn as sns
 import preprocessing as pp
 import matplotlib.pyplot as plt
+import configparser
+
+config = configparser.ConfigParser()
+config.read('config.ini')
+GLUCOSE = config['variables']['glucose']
+TIME = config['variables']['time']
+INTERVAL = config['variables'].getint('interval')
 
 """
 Graphs (and possibly saves) daily plots for all of the patients in the given DataFrame
@@ -42,14 +49,14 @@ def daily_plot(
 ):
     data = df.loc[id]
 
-    data[pp.time()] = pd.to_datetime(data[pp.time()])
+    data[TIME] = pd.to_datetime(data[TIME])
     data.reset_index(inplace=True)
 
     plot = sns.relplot(
         data=data,
         kind="line",
-        x=pp.time(),
-        y=pp.glucose(),
+        x=TIME,
+        y=GLUCOSE,
         col="Day Chunking" if chunk_day else None,
     )
     plot.fig.subplots_adjust(top=0.9)
@@ -61,9 +68,9 @@ def daily_plot(
         for ax in plot.axes.flat:
             if isinstance(event_data, pd.DataFrame):
                 for index, row in event_data.iterrows():
-                    ax.axvline(pd.to_datetime(row[pp.time()]), color="orange")
+                    ax.axvline(pd.to_datetime(row[TIME]), color="orange")
             else:
-                ax.axvline(pd.to_datetime(event_data[pp.time()]), color="orange")
+                ax.axvline(pd.to_datetime(event_data[TIME]), color="orange")
 
     plt.ylim(35, 405)
     plt.show()
@@ -103,23 +110,23 @@ def spaghetti_plot(
     data.reset_index(inplace=True)
 
     # Convert timestamp column to datetime format
-    data[pp.time()] = pd.to_datetime(data[pp.time()])
+    data[TIME] = pd.to_datetime(data[TIME])
 
-    data["Day"] = data[pp.time()].dt.date
+    data["Day"] = data[TIME].dt.date
 
-    times = data[pp.time()] - data[pp.time()].dt.normalize()
+    times = data[TIME] - data[TIME].dt.normalize()
     # need to be in a DateTime format so seaborn can tell how to scale the x axis labels
     data["Time"] = (
-        pd.to_datetime(["1/1/1970" for i in range(data[pp.time()].size)]) + times
+        pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times
     )
 
-    data.sort_values(by=[pp.time()], inplace=True)
+    data.sort_values(by=[TIME], inplace=True)
 
     plot = sns.relplot(
         data=data,
         kind="line",
         x="Time",
-        y=pp.glucose(),
+        y=GLUCOSE,
         hue="Day",
         col="Day Chunking" if chunk_day else None,
     )
@@ -162,7 +169,7 @@ Displays (and possibly saves) an AGP Plot for only the given patient in the Data
 
 
 def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
-    if pp.interval() > 5:
+    if INTERVAL > 5:
         raise Exception(
             "Data needs to have measurement intervals at most 5 minutes long"
         )
@@ -170,11 +177,11 @@ def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
     data = df.loc[id]
     data.reset_index(inplace=True)
 
-    data[[pp.time(), pp.glucose()]] = pp.resample_data(data[[pp.time(), pp.glucose()]])
-    times = data[pp.time()] - data[pp.time()].dt.normalize()
+    data[[TIME, GLUCOSE]] = pp.resample_data(data[[TIME, GLUCOSE]])
+    times = data[TIME] - data[TIME].dt.normalize()
     # need to be in a DateTime format so seaborn can tell how to scale the x axis labels below
     data["Time"] = (
-        pd.to_datetime(["1/1/1970" for i in range(data[pp.time()].size)]) + times
+        pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times
     )
 
     data.set_index("Time", inplace=True)
@@ -183,11 +190,11 @@ def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
     for time, measurements in data.groupby("Time"):
         metrics = {
             "Time": time,
-            "5th": measurements[pp.glucose()].quantile(0.05),
-            "25th": measurements[pp.glucose()].quantile(0.25),
-            "Median": measurements[pp.glucose()].median(),
-            "75th": measurements[pp.glucose()].quantile(0.75),
-            "95th": measurements[pp.glucose()].quantile(0.95),
+            "5th": measurements[GLUCOSE].quantile(0.05),
+            "25th": measurements[GLUCOSE].quantile(0.25),
+            "Median": measurements[GLUCOSE].median(),
+            "75th": measurements[GLUCOSE].quantile(0.75),
+            "95th": measurements[GLUCOSE].quantile(0.95),
         }
         agp_data = pd.concat([agp_data, pd.DataFrame.from_records([metrics])])
 
@@ -196,7 +203,7 @@ def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
         id_vars=["Time"],
         value_vars=["5th", "25th", "Median", "75th", "95th"],
         var_name="Metric",
-        value_name=pp.glucose(),
+        value_name=GLUCOSE,
     )
 
     agp_data.sort_values(by=["Time"], inplace=True)
@@ -205,7 +212,7 @@ def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
         data=agp_data,
         kind="line",
         x="Time",
-        y=pp.glucose(),
+        y=GLUCOSE,
         hue="Metric",
         hue_order=["95th", "75th", "Median", "25th", "5th"],
         palette=["#869FCE", "#97A8CB", "#183260", "#97A8CB", "#869FCE"],

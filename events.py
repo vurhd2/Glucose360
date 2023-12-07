@@ -1,6 +1,13 @@
 import pandas as pd
 from preprocessing import time
 from features import create_features
+import configparser
+
+config = configparser.ConfigParser()
+config.read('config.ini')
+GLUCOSE = config['variables']['glucose']
+TIME = config['variables']['time']
+INTERVAL = config['variables'].getint('interval')
 
 """
 Returns a multiindexed Pandas DataFrame containing only the patient data during their respective 'events'
@@ -25,13 +32,13 @@ def retrieve_event_data(
     for index, row in events.iterrows():
         id = row["id"]
 
-        datetime = pd.Timestamp(row[time()])
+        datetime = pd.Timestamp(row[TIME])
         initial = datetime - pd.Timedelta(row[before], "h")
         final = datetime + pd.Timedelta(row[after], "h")
 
         patient_data = df.loc[id]
         data = patient_data[
-            (patient_data[time()] >= initial) & (patient_data[time()] <= final)
+            (patient_data[TIME] >= initial) & (patient_data[TIME] <= final)
         ].copy()
 
         data["id"] = id
