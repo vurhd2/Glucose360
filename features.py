@@ -152,10 +152,33 @@ def COGI(df: pd.DataFrame) -> float:
         sd_score = 0
     elif sd > 18:
         sd_score = (1 - (sd / 108)) * 100
-    sd_score = 0.15 * sd_score
+    sd_score *= 0.15
     
     COGI = tir_score + tbr_score + sd_score
     return COGI
+
+def GRADE_formula(df: pd.DataFrame) -> pd.DataFrame:
+    df_GRADE = pd.DataFrame()
+    df_GRADE[GLUCOSE] = df[GLUCOSE].copy()
+    df_GRADE["GRADE"] = ((np.log10(np.log10(df[GLUCOSE] / 18)) + 0.16) ** 2) * 425
+    return df_GRADE
+
+def GRADE_eugly(df: pd.DataFrame) -> float:
+    df_GRADE = GRADE_formula(df)
+    return np.sum(df_GRADE[(df_GRADE[GLUCOSE] >= 70) & (df_GRADE[GLUCOSE] <= 140)]["GRADE"]) / np.sum(df_GRADE["GRADE"]) * 100
+
+def GRADE_hypo(df: pd.DataFrame) -> float:
+    df_GRADE = GRADE_formula(df)
+    return np.sum(df_GRADE[df_GRADE[GLUCOSE] < 70]["GRADE"]) / np.sum(df_GRADE["GRADE"]) * 100
+
+def GRADE_hyper(df: pd.DataFrame) -> float:
+    df_GRADE = GRADE_formula(df)
+    return np.sum(df_GRADE[df_GRADE[GLUCOSE] > 140]["GRADE"]) / np.sum(df_GRADE["GRADE"]) * 100
+
+def GRADE(df: pd.DataFrame) -> float:
+    df_GRADE = GRADE_formula(df)
+    print(df_GRADE["GRADE"])
+    return df_GRADE["GRADE"].mean()
 
 def MAGE(df: pd.DataFrame, short_ma: int = 9) -> float:
     data = df.copy()
@@ -271,6 +294,11 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["ADRR"] = ADRR(data)
         features["COGI"] = COGI(data)
         #features["MAGE"] = MAGE(data)
+
+        features["euglycaemic GRADE"] = GRADE_eugly(data)
+        features["hyperglycaemic GRADE"] = GRADE_hyper(data)
+        features["hypoglycaemic GRADE"] = GRADE_hypo(data)
+        features["GRADE"] = GRADE(data)
 
         if events:
             features["AUC"] = AUC(data)
