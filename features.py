@@ -177,8 +177,14 @@ def GRADE_hyper(df: pd.DataFrame) -> float:
 
 def GRADE(df: pd.DataFrame) -> float:
     df_GRADE = GRADE_formula(df)
-    print(df_GRADE["GRADE"])
     return df_GRADE["GRADE"].mean()
+
+def GVP(df: pd.DataFrame) -> float:
+    delta_x = df[TIME].diff().apply(lambda timedelta: timedelta.total_seconds() / 60)
+    delta_y = df[GLUCOSE].diff()
+    L = np.sum(np.sqrt((delta_x ** 2) + (delta_y ** 2)))
+    L_0 = np.sum(delta_x)
+    return ((L / L_0) - 1) * 100
 
 def MAGE(df: pd.DataFrame, short_ma: int = 9) -> float:
     data = df.copy()
@@ -299,6 +305,8 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["hyperglycaemic GRADE"] = GRADE_hyper(data)
         features["hypoglycaemic GRADE"] = GRADE_hypo(data)
         features["GRADE"] = GRADE(data)
+
+        features["GVP"] = GVP(data)
 
         if events:
             features["AUC"] = AUC(data)
