@@ -3,15 +3,11 @@ import numpy as np
 from scipy.integrate import trapezoid
 import configparser
 
-print("B")
-
 config = configparser.ConfigParser()
 config.read('config.ini')
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
 INTERVAL = config['variables'].getint('interval')
-
-print("C")
 
 def mean(df: pd.DataFrame) -> float:
     return df[GLUCOSE].mean()
@@ -139,6 +135,17 @@ def ADRR(df: pd.DataFrame) -> float:
    adrr = data.groupby(['date']).apply(lambda df: np.max(df['left']) + np.max(df['right'])).mean()
    return adrr
 
+def BG_formula(ser: pd.Series) -> pd.Series:
+    return 1.509 * (np.power(np.log(ser), 1.084) - 5.831)
+
+def LBGI(df: pd.DataFrame) -> float:
+    BG = np.minimum(0, BG_formula(df[GLUCOSE]))
+    return np.mean(10 * (BG ** 2))
+
+def HBGI(df: pd.DataFrame) -> float:
+    BG = np.maximum(0, BG_formula(df[GLUCOSE]))
+    return np.mean(10 * (BG ** 2))
+
 def COGI(df: pd.DataFrame) -> float:
     tir = percent_time_in_range(df)
     tir_score = 0.5 * tir
@@ -185,6 +192,17 @@ def GVP(df: pd.DataFrame) -> float:
     L = np.sum(np.sqrt((delta_x ** 2) + (delta_y ** 2)))
     L_0 = np.sum(delta_x)
     return ((L / L_0) - 1) * 100
+
+def hyper_index(df: pd.DataFrame, limit: int = 140, a: float = 1.1, c: float = 30) -> float:
+    BG = df[GLUCOSE].dropna()
+    return np.sum(np.power(BG[BG > limit] - limit, a)) / (BG.size * c)
+
+def hypo_index(df: pd.DataFrame, limit: int = 80, b: float = 2, d: float = 30) -> float:
+    BG = df[GLUCOSE].dropna()
+    return np.sum(np.power(limit - BG[BG < limit], b)) / (BG.size * d)
+
+def IGC(df: pd.DataFrame) -> float:
+    return hyper_index(df) + hypo_index(df)
 
 def MAGE(df: pd.DataFrame, short_ma: int = 9) -> float:
     data = df.copy()
@@ -279,9 +297,7 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
 
     for id, data in dataset.groupby("id"):
         features = {}
-        print("D")
         summary = summary_stats(data)
-        print("E")
         features["id"] = id
 
         features["mean"] = mean(data)
@@ -298,6 +314,8 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["gmi"] = gmi(data)
         features["percent time in range"] = percent_time_in_range(data)
         features["ADRR"] = ADRR(data)
+        features["LBGI"] = LBGI(data)
+        features["HGBI"] = HBGI(data)
         features["COGI"] = COGI(data)
         #features["MAGE"] = MAGE(data)
 
@@ -305,6 +323,10 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["hyperglycaemic GRADE"] = GRADE_hyper(data)
         features["hypoglycaemic GRADE"] = GRADE_hypo(data)
         features["GRADE"] = GRADE(data)
+
+        features["hyperglycemia index"] = hyper_index(data)
+        features["hypoglycemia index"] = hypo_index(data)
+        features["IGC"] = IGC(data)
 
         features["GVP"] = GVP(data)
 
