@@ -204,6 +204,9 @@ def hypo_index(df: pd.DataFrame, limit: int = 80, b: float = 2, d: float = 30) -
 def IGC(df: pd.DataFrame) -> float:
     return hyper_index(df) + hypo_index(df)
 
+def j_index(df: pd.DataFrame) -> float:
+    return 0.001 * ((mean(df) + std(df)) ** 2)
+
 def MAGE(df: pd.DataFrame, short_ma: int = 9) -> float:
     data = df.copy()
     data["MA_Short"] = data[GLUCOSE].rolling(window=short_ma, min_periods=1, center=True).mean()
@@ -329,6 +332,7 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["IGC"] = IGC(data)
 
         features["GVP"] = GVP(data)
+        features["j-index"] = j_index(data)
 
         if events:
             features["AUC"] = AUC(data)
