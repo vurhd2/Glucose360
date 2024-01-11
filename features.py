@@ -136,7 +136,7 @@ def ADRR(df: pd.DataFrame) -> float:
    return adrr
 
 def BG_formula(ser: pd.Series) -> pd.Series:
-    return 1.509 * (np.power(np.log(ser), 1.084) - 5.831)
+    return 1.509 * (np.power(np.log(ser), 1.084) - 5.381)
 
 def LBGI(df: pd.DataFrame) -> float:
     BG = np.minimum(0, BG_formula(df[GLUCOSE]))
@@ -207,11 +207,30 @@ def IGC(df: pd.DataFrame) -> float:
 def j_index(df: pd.DataFrame) -> float:
     return 0.001 * ((mean(df) + std(df)) ** 2)
 
-def MAGE(df: pd.DataFrame, short_ma: int = 9) -> float:
+def MAD(df: pd.DataFrame) -> float:
+    return (df[GLUCOSE] - mean(df)).abs().mean()
+
+# n is the gap in hours
+# INTERVAL should be in minutes
+def CONGA(df: pd.DataFrame, n: int = 24) -> float:
+    period = n * (60 / INTERVAL)
+    return np.std(df[GLUCOSE].diff(periods=period))
+
+# lag is in days
+def MODD(df: pd.DataFrame, lag: int = 1) -> float:
+    period = lag * 24 * (60 / INTERVAL)
+    return np.mean(np.abs(df[GLUCOSE].diff(periods=period)))
+
+def MAG(df: pd.DataFrame) -> float:
+    time_diff = (df[TIME].iloc[-1] - df[TIME].iloc[0]).seconds / 3600
+    return np.sum(df[GLUCOSE].diff().abs()) / time_diff
+
+def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
     data = df.copy()
     data["MA_Short"] = data[GLUCOSE].rolling(window=short_ma, min_periods=1, center=True).mean()
+    data["MA_Long"] = data[GLUCOSE].rolling(window=long_ma, min_periods=1, center=True).mean()
 
-    signs = np.sign(data["MA_Short"].diff())
+    signs = np.sign((data["MA_Short"] - data["MA_Long"]).diff())
     signs[signs==0] = -1
     crossings = np.where(np.diff(signs))[0]
 
@@ -320,7 +339,6 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["LBGI"] = LBGI(data)
         features["HGBI"] = HBGI(data)
         features["COGI"] = COGI(data)
-        #features["MAGE"] = MAGE(data)
 
         features["euglycaemic GRADE"] = GRADE_eugly(data)
         features["hyperglycaemic GRADE"] = GRADE_hyper(data)
@@ -333,6 +351,12 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
 
         features["GVP"] = GVP(data)
         features["j-index"] = j_index(data)
+
+        features["CONGA"] = CONGA(data)
+        features["MAD"] = MAD(data)
+        features["MAG"] = MAG(data)
+        features["MODD"] = MODD(data)
+        #features["MAGE"] = MAGE(data)
 
         if events:
             features["AUC"] = AUC(data)
