@@ -243,19 +243,20 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
    crosses.dropna(inplace=True)
 
    num_extrema = crosses.shape[0] -  1
-   minmax = pd.Series(np.nan, index=range(0, num_extrema))
-   indexes = pd.Series(np.nan, index=range(0, num_extrema))
+   #minmax = pd.Series(np.nan, index=range(num_extrema))
+   minmax = np.tile(np.nan, num_extrema)
+   indexes = pd.Series(np.nan, index=range(num_extrema))
 
    for index in range(num_extrema):
-      s1 = np.where(index == 0, crosses["location"].iloc[index], indexes.iloc[index-1])
+      s1 = int(np.where(index == 0, crosses["location"].iloc[index], indexes.iloc[index-1]))
       s2 = crosses["location"].iloc[index+1]
 
-      values = df[GLUCOSE].iloc[s1:s2].dropna()
+      values = df[GLUCOSE].iloc[s1:s2].dropna().reset_index(drop=True)
       if crosses["type"].iloc[index] == "nadir":
-         minmax.iloc[index] = np.min(values)
+         minmax[index] = np.min(values)
          indexes.iloc[index] = values.idxmin() + s1 - 1
       else:
-         minmax.iloc[index] = np.max(values)
+         minmax[index] = np.max(values)
          indexes.iloc[index] = values.idxmax() + s1 - 1
          
    differences = np.transpose(minmax[:, np.newaxis] - minmax)
@@ -266,8 +267,9 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
    mage_plus_heights = pd.Series()
    mage_plus_tp_pairs = {}
    j = 0; prev_j = 0
-   while j <= N:
-      delta = differences[prev_j:j,j]
+   while j < N:
+      delta = differences[prev_j:j+1,j]
+
       max_v = np.max(delta)
       i = np.argmax(delta) + prev_j - 1
 
@@ -275,9 +277,9 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
          for k in range(j, N):
             if minmax[k] > minmax[j]:
                j = k
-            if (differences[j, k] < (-1 * sd)) or (k == N):
+            if (differences[j, k] < (-1 * sd)) or (k == N - 1):
                max_v = minmax[j] - minmax[i]
-               mage_plus_heights = pd.concat([mage_plus_heights, max_v])
+               mage_plus_heights = pd.concat([mage_plus_heights, pd.Series(max_v)])
                mage_plus_tp_pairs[len(mage_plus_tp_pairs)] = [i, j]
 
                prev_j = k
@@ -290,8 +292,8 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
    mage_minus_heights = pd.Series()
    mage_minus_tp_pairs = {}
    j = 0; prev_j = 0
-   while j <= N:
-      delta = differences[prev_j:j,j]
+   while j < N:
+      delta = differences[prev_j:j+1,j]
       min_v = np.min(delta)
       i = np.argmin(delta) + prev_j - 1
 
@@ -299,9 +301,9 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
          for k in range(j, N):
             if minmax[k] < minmax[j]:
                j = k
-            if (differences[j, k] > sd) or (k == N):
+            if (differences[j, k] > sd) or (k == N - 1):
                min_v = minmax[j] - minmax[i]
-               mage_minus_heights = pd.concat([mage_minus_heights, min_v])
+               mage_minus_heights = pd.concat([mage_minus_heights, pd.Series(min_v)])
                mage_minus_tp_pairs[len(mage_minus_tp_pairs)] = [i, j, k]
 
                prev_j = k
@@ -311,7 +313,7 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
          j += 1
 
    plus_first = np.where(mage_plus_heights.size > 0 and ((mage_minus_heights.size == 0) or (mage_plus_tp_pairs[0][1] <= mage_minus_tp_pairs[0][0])), True, False)
-   return np.where(plus_first, np.mean(mage_plus_heights), np.mean(mage_minus_heights.abs()))
+   return float(np.where(plus_first, np.mean(mage_plus_heights), np.mean(mage_minus_heights.abs())))
 
 # ------------------------- EVENT-BASED ----------------------------
 
