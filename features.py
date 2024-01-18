@@ -12,7 +12,6 @@ INTERVAL = config['variables'].getint('interval')
 def mean(df: pd.DataFrame) -> float:
     return df[GLUCOSE].mean()
 
-
 def summary_stats(df: pd.DataFrame) -> list:
     min = df[GLUCOSE].min()
     first = df[GLUCOSE].quantile(0.25)
@@ -22,18 +21,14 @@ def summary_stats(df: pd.DataFrame) -> list:
 
     return [min, first, median, third, max]
 
-
 def std(df: pd.DataFrame) -> float:
     return df[GLUCOSE].std()
-
 
 def a1c(df: pd.DataFrame) -> float:
     return (46.7 + mean(df)) / 28.7
 
-
 def gmi(df: pd.DataFrame) -> float:
     return (0.02392 * mean(df)) + 3.31
-
 
 """
 Returns the percent of total time the glucose levels were between the given lower and upper bounds (inclusive)
@@ -41,39 +36,11 @@ Returns the percent of total time the glucose levels were between the given lowe
 @param low: the lower bound of the acceptable glucose values
 @param high: the upper bound of the acceptable glucose values
 """
-
-
 def percent_time_in_range(df: pd.DataFrame, low: int = 70, high: int = 180) -> float:
     in_range_df = df[(df[GLUCOSE] <= high) & (df[GLUCOSE] >= low)]
     time_in_range = len(in_range_df)
     total_time = len(df)
     return (100 * time_in_range / total_time) if total_time > 0 else np.nan
-
-
-# ------------------------- EVENT-BASED ----------------------------
-
-
-def AUC(df: pd.DataFrame) -> float:
-    return trapezoid(df[GLUCOSE], dx=INTERVAL)
-
-
-def iAUC(df: pd.DataFrame, level: int = 70) -> float:
-    data = df.copy()
-    data[GLUCOSE] = data[GLUCOSE] - level
-    data.loc[data[GLUCOSE] < 0, GLUCOSE] = 0
-    return AUC(data)
-
-
-def baseline(df: pd.DataFrame) -> float:
-    return df[TIME].iloc[0]
-
-
-def peak(df: pd.DataFrame) -> float:
-    return np.max(df[GLUCOSE])
-
-
-def delta(df: pd.DataFrame) -> float:
-    return peak(df) - baseline(df)
 
 
 """
@@ -186,6 +153,14 @@ def GRADE(df: pd.DataFrame) -> float:
     df_GRADE = GRADE_formula(df)
     return df_GRADE["GRADE"].mean()
 
+def GRI(df: pd.DataFrame) -> float:
+    vlow = percent_time_in_range(df, 0, 53)
+    low = percent_time_in_range(df, 54, 69)
+    high = percent_time_in_range(df, 181, 250)
+    vhigh = percent_time_in_range(df, 251, 500)
+
+    return min((3 * vlow) + (2.4 * low) + (0.8 * high) + (1.6 * vhigh), 100)
+
 def GVP(df: pd.DataFrame) -> float:
     delta_x = df[TIME].diff().apply(lambda timedelta: timedelta.total_seconds() / 60)
     delta_y = df[GLUCOSE].diff()
@@ -221,99 +196,152 @@ def MODD(df: pd.DataFrame, lag: int = 1) -> float:
     period = lag * 24 * (60 / INTERVAL)
     return np.mean(np.abs(df[GLUCOSE].diff(periods=period)))
 
+def mean_absolute_differences(df: pd.DataFrame) -> float:
+    return np.mean(np.abs(df[GLUCOSE].diff()))
+
+def median_absolute_deviation(df: pd.DataFrame) -> float:
+    return np.median(np.abs(df[GLUCOSE] - np.mean(df[GLUCOSE])))
+
 def MAG(df: pd.DataFrame) -> float:
-    time_diff = (df[TIME].iloc[-1] - df[TIME].iloc[0]).seconds / 3600
+    time_diff = (df[TIME].iloc[-1] - df[TIME].iloc[0]).total_seconds() / 3600
     return np.sum(df[GLUCOSE].diff().abs()) / time_diff
 
 def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
-    data = df.copy()
-    data["MA_Short"] = data[GLUCOSE].rolling(window=short_ma, min_periods=1, center=True).mean()
-    data["MA_Long"] = data[GLUCOSE].rolling(window=long_ma, min_periods=1, center=True).mean()
+   averages = pd.DataFrame()
+   averages[GLUCOSE] = df[GLUCOSE]
 
-    signs = np.sign((data["MA_Short"] - data["MA_Long"]).diff())
-    signs[signs==0] = -1
-    crossings = np.where(np.diff(signs))[0]
+   # calculate rolling means, iglu does right align instead of center
+   averages["MA_Short"] = averages[GLUCOSE].rolling(window=short_ma, min_periods=1).mean()
+   averages["MA_Long"] = averages[GLUCOSE].rolling(window=long_ma, min_periods=1).mean()
 
-    glu = lambda x: data[GLUCOSE].iloc[x]
-    peak_start = 0 if glu(0) < glu(1) else 1
-    valley_start = abs(peak_start - 1)
-    
-    peaks = [max([glu(crossings[(index * 2) + peak_start]), glu(crossings[(index * 2) + 1 + peak_start])]) for index in range(peak_start, int((len(crossings) + valley_start) / 2))]
-    valleys = [min([glu(crossings[(index * 2) + valley_start]), glu(crossings[(index * 2) + 1 + valley_start])]) for index in range(valley_start, int((len(crossings) + peak_start) / 2))]
-    
-    #validated_peaks = peaks.copy()
-    #validated_valleys = valleys.copy() 
-
-
-    excursions = []
-    for i in range(len(crossings) - 1):
-        excursion = (
-            data[GLUCOSE][crossings[i] : crossings[i + 1]].max()
-            - data[GLUCOSE][crossings[i] : crossings[i + 1]].min()
-        )
-        if excursion > data[GLUCOSE].std():  # Only consider significant excursions
-            excursions.append(excursion)
-    mage = np.mean(excursions) if excursions else np.nan
-    return mage
-
-
-"""
-def MAGE(df: pd.DataFrame) -> float:
-   data = pd.DataFrame()
-   data[GLUCOSE] = df[df[GLUCOSE].diff() != 0][GLUCOSE]
-   data.reset_index(inplace=True)
-
-   roc = "rate of change"
-   data[roc] = data[GLUCOSE].pct_change()
+   # fill in leading NaNs due to moving average calculation
+   averages["MA_Short"].iloc[:short_ma] = averages["MA_Short"].iloc[short_ma]
+   averages["MA_Long"].iloc[:long_ma] = averages["MA_Long"].iloc[long_ma]
+   averages["DELTA_SL"] = averages["MA_Short"] - averages["MA_Long"]
    
-   data.dropna(subset=[roc, GLUCOSE], inplace=True)
+   # get crossing points
+   glu = lambda i: averages[GLUCOSE].iloc[i]
+   crosses = pd.DataFrame.from_records([{"location": 0, "type": np.where(glu(0) > 0, "peak", "nadir")}])
 
-   mask1 = (data[roc] < 0)
-   mask2 = (data[roc] > 0).shift()
-   mask3 = (data[roc] > 0)
-   mask4 = (data[roc] < 0).shift()
+   for index in range(1, averages.shape[0]):
+      current_actual = glu(index)
+      current_average = averages["DELTA_SL"].iloc[index]
+      previous_actual = glu(index-1)
+      previous_average = averages["DELTA_SL"].iloc[index-1]
 
-   # getting all peaks and nadirs in smoothed curve
-   extrema = data[(data[roc] == 0) | (mask1 & mask2) | (mask3 & mask4)].copy()
-   #extrema = extrema[extrema[GLUCOSE].diff() != 0] # getting rid of extrema plateaus
+      if (((not np.isnan(current_actual)) and (not np.isnan(previous_actual))) and 
+          ((not np.isnan(current_average)) and (not np.isnan(previous_average)))):
+         if current_average * previous_average < 0:
+            type = np.where(current_average < previous_average, "nadir", "peak")
+            crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])     
+      elif (not np.isnan(current_average) and (current_average * averages["DELTA_SL"].iloc[crosses["location"].iloc[-1]] < 0)): # VALIDATE THIS LATER
+         prev_delta = averages["DELTA_SL"].iloc[crosses["location"].iloc[-1]]
+         type = np.where(current_average < prev_delta, "nadir", "peak")
+         crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])
 
-   #extrema.reset_index(inplace=True)
-   extrema = extrema[GLUCOSE].copy()
+   crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": -1, "type": np.where(averages["DELTA_SL"].iloc[-1] > 0, "peak", "nadir")}])])     
+   crosses.dropna(inplace=True)
 
-   valid_extrema = [extrema.iloc[0]]
-   sd = std(df)
-   skip = False # boolean to skip certain iterations of for loop
-   for i in range(1, len(extrema) - 1):
-      if skip:
-         skip = False
-         continue
+   num_extrema = crosses.shape[0] -  1
+   minmax = pd.Series(np.nan, index=range(0, num_extrema))
+   indexes = pd.Series(np.nan, index=range(0, num_extrema))
 
-      glu = lambda x: extrema.iloc[x]
-      is_valid = lambda x, y: abs(x - y) >= sd 
+   for index in range(num_extrema):
+      s1 = np.where(index == 0, crosses["location"].iloc[index], indexes.iloc[index-1])
+      s2 = crosses["location"].iloc[index+1]
 
-      current = glu(i)
-
-      # if both amplitude segments are larger than the stdev, the extrema should be kept for MAGE calculations 
-      if is_valid(current, valid_extrema[-1]) and is_valid(current, glu(i+1)):
-         valid_extrema.append(current)
+      values = df[GLUCOSE].iloc[s1:s2].dropna()
+      if crosses["type"].iloc[index] == "nadir":
+         minmax.iloc[index] = np.min(values)
+         indexes.iloc[index] = values.idxmin() + s1 - 1
       else:
-         skip = True
+         minmax.iloc[index] = np.max(values)
+         indexes.iloc[index] = values.idxmax() + s1 - 1
+         
+   differences = np.transpose(minmax[:, np.newaxis] - minmax)
+   sd = np.std(df[GLUCOSE].dropna())
+   N = len(minmax)
 
-   amplitude = lambda x: abs(valid_extrema[x] - valid_extrema[x+1])
-   amplitudes = pd.Series([amplitude(i * 2) for i in range(int(len(valid_extrema) / 2))])
+   # MAGE+
+   mage_plus_heights = pd.Series()
+   mage_plus_tp_pairs = {}
+   j = 0; prev_j = 0
+   while j <= N:
+      delta = differences[prev_j:j,j]
+      max_v = np.max(delta)
+      i = np.argmax(delta) + prev_j - 1
 
-   print(sd)
-   print(valid_extrema)
+      if max_v >= sd:
+         for k in range(j, N):
+            if minmax[k] > minmax[j]:
+               j = k
+            if (differences[j, k] < (-1 * sd)) or (k == N):
+               max_v = minmax[j] - minmax[i]
+               mage_plus_heights = pd.concat([mage_plus_heights, max_v])
+               mage_plus_tp_pairs[len(mage_plus_tp_pairs)] = [i, j]
 
-   return amplitudes.mean()
-"""
+               prev_j = k
+               j = k
+               break
+      else:
+         j += 1
+   
+   # MAGE-
+   mage_minus_heights = pd.Series()
+   mage_minus_tp_pairs = {}
+   j = 0; prev_j = 0
+   while j <= N:
+      delta = differences[prev_j:j,j]
+      min_v = np.min(delta)
+      i = np.argmin(delta) + prev_j - 1
+
+      if min_v <= (-1 * sd):
+         for k in range(j, N):
+            if minmax[k] < minmax[j]:
+               j = k
+            if (differences[j, k] > sd) or (k == N):
+               min_v = minmax[j] - minmax[i]
+               mage_minus_heights = pd.concat([mage_minus_heights, min_v])
+               mage_minus_tp_pairs[len(mage_minus_tp_pairs)] = [i, j, k]
+
+               prev_j = k
+               j = k
+               break
+      else:
+         j += 1
+
+   plus_first = np.where(mage_plus_heights.size > 0 and ((mage_minus_heights.size == 0) or (mage_plus_tp_pairs[0][1] <= mage_minus_tp_pairs[0][0])), True, False)
+   return np.where(plus_first, np.mean(mage_plus_heights), np.mean(mage_minus_heights.abs()))
+
+# ------------------------- EVENT-BASED ----------------------------
+
+
+def AUC(df: pd.DataFrame) -> float:
+    return trapezoid(df[GLUCOSE], dx=INTERVAL)
+
+
+def iAUC(df: pd.DataFrame, level: int = 70) -> float:
+    data = df.copy()
+    data[GLUCOSE] = data[GLUCOSE] - level
+    data.loc[data[GLUCOSE] < 0, GLUCOSE] = 0
+    return AUC(data)
+
+
+def baseline(df: pd.DataFrame) -> float:
+    return df[TIME].iloc[0]
+
+
+def peak(df: pd.DataFrame) -> float:
+    return np.max(df[GLUCOSE])
+
+
+def delta(df: pd.DataFrame) -> float:
+    return peak(df) - baseline(df)
 
 """
 Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
 returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
 """
-
-
 def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame:
     df = pd.DataFrame()
 
@@ -332,18 +360,22 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["intrasd"] = std(data)
         features["intersd"] = std(dataset)
 
+        features["mean absolute differences"] = mean_absolute_differences(data)
+        features["median absolute deviation"] = median_absolute_deviation(data)
+
         features["a1c"] = a1c(data)
         features["gmi"] = gmi(data)
         features["percent time in range"] = percent_time_in_range(data)
         features["ADRR"] = ADRR(data)
         features["LBGI"] = LBGI(data)
-        features["HGBI"] = HBGI(data)
+        features["HBGI"] = HBGI(data)
         features["COGI"] = COGI(data)
 
         features["euglycaemic GRADE"] = GRADE_eugly(data)
         features["hyperglycaemic GRADE"] = GRADE_hyper(data)
         features["hypoglycaemic GRADE"] = GRADE_hypo(data)
         features["GRADE"] = GRADE(data)
+        features["GRI"] = GRI(data)
 
         features["hyperglycemia index"] = hyper_index(data)
         features["hypoglycemia index"] = hypo_index(data)
