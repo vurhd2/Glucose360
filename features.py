@@ -157,7 +157,7 @@ def GRI(df: pd.DataFrame) -> float:
     vlow = percent_time_in_range(df, 0, 53)
     low = percent_time_in_range(df, 54, 69)
     high = percent_time_in_range(df, 181, 250)
-    vhigh = percent_time_in_range(df, 251, 500)
+    vhigh = percent_time_in_range(df, 251, 500) 
 
     return min((3 * vlow) + (2.4 * low) + (0.8 * high) + (1.6 * vhigh), 100)
 
@@ -182,9 +182,6 @@ def IGC(df: pd.DataFrame) -> float:
 def j_index(df: pd.DataFrame) -> float:
     return 0.001 * ((mean(df) + std(df)) ** 2)
 
-def MAD(df: pd.DataFrame) -> float:
-    return (df[GLUCOSE] - mean(df)).abs().mean()
-
 # n is the gap in hours
 # INTERVAL should be in minutes
 def CONGA(df: pd.DataFrame, n: int = 24) -> float:
@@ -200,13 +197,13 @@ def mean_absolute_differences(df: pd.DataFrame) -> float:
     return np.mean(np.abs(df[GLUCOSE].diff()))
 
 def median_absolute_deviation(df: pd.DataFrame) -> float:
-    return np.median(np.abs(df[GLUCOSE] - np.mean(df[GLUCOSE])))
+    return np.nanmedian(np.abs(df[GLUCOSE] - np.mean(df[GLUCOSE])))
 
 def MAG(df: pd.DataFrame) -> float:
     time_diff = (df[TIME].iloc[-1] - df[TIME].iloc[0]).total_seconds() / 3600
     return np.sum(df[GLUCOSE].diff().abs()) / time_diff
 
-def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
+def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    averages = pd.DataFrame()
    averages[GLUCOSE] = df[GLUCOSE]
 
@@ -218,32 +215,34 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
    averages["MA_Short"].iloc[:short_ma] = averages["MA_Short"].iloc[short_ma]
    averages["MA_Long"].iloc[:long_ma] = averages["MA_Long"].iloc[long_ma]
    averages["DELTA_SL"] = averages["MA_Short"] - averages["MA_Long"]
+
+   # AVERAGES SEEM TO BE VALIDATED
    
    # get crossing points
    glu = lambda i: averages[GLUCOSE].iloc[i]
-   crosses = pd.DataFrame.from_records([{"location": 0, "type": np.where(glu(0) > 0, "peak", "nadir")}])
+   average = lambda i: averages["DELTA_SL"].iloc[i]
+   crosses = pd.DataFrame.from_records([{"location": 0, "type": np.where(average(0) > 0, "peak", "nadir")}])
 
    for index in range(1, averages.shape[0]):
       current_actual = glu(index)
-      current_average = averages["DELTA_SL"].iloc[index]
+      current_average = average(index)
       previous_actual = glu(index-1)
-      previous_average = averages["DELTA_SL"].iloc[index-1]
+      previous_average = average(index-1)
 
       if (((not np.isnan(current_actual)) and (not np.isnan(previous_actual))) and 
           ((not np.isnan(current_average)) and (not np.isnan(previous_average)))):
          if current_average * previous_average < 0:
             type = np.where(current_average < previous_average, "nadir", "peak")
             crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])     
-      elif (not np.isnan(current_average) and (current_average * averages["DELTA_SL"].iloc[crosses["location"].iloc[-1]] < 0)): # VALIDATE THIS LATER
-         prev_delta = averages["DELTA_SL"].iloc[crosses["location"].iloc[-1]]
+      elif (not np.isnan(current_average) and (current_average * average(crosses["location"].iloc[-1]) < 0)): # VALIDATE THIS LATER
+         prev_delta = average(crosses["location"].iloc[-1])
          type = np.where(current_average < prev_delta, "nadir", "peak")
          crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])
 
-   crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": -1, "type": np.where(averages["DELTA_SL"].iloc[-1] > 0, "peak", "nadir")}])])     
-   crosses.dropna(inplace=True)
+   crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": -1, "type": np.where(average(-1) > 0, "peak", "nadir")}])])     
+   crosses.dropna(inplace=True) #CROSSES MOSTLY VALIDATED, INDEXES SEEM TO BE 1 OFF FROM IGLU AND THERE ARE ALSO A FEW ADDED ROWS
 
    num_extrema = crosses.shape[0] -  1
-   #minmax = pd.Series(np.nan, index=range(num_extrema))
    minmax = np.tile(np.nan, num_extrema)
    indexes = pd.Series(np.nan, index=range(num_extrema))
 
@@ -254,12 +253,12 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
       values = df[GLUCOSE].iloc[s1:s2].dropna().reset_index(drop=True)
       if crosses["type"].iloc[index] == "nadir":
          minmax[index] = np.min(values)
-         indexes.iloc[index] = values.idxmin() + s1 - 1
+         indexes.iloc[index] = values.idxmin() + s1
       else:
          minmax[index] = np.max(values)
-         indexes.iloc[index] = values.idxmax() + s1 - 1
-         
-   differences = np.transpose(minmax[:, np.newaxis] - minmax)
+         indexes.iloc[index] = values.idxmax() + s1  
+   
+   differences = np.transpose(minmax[:, np.newaxis] - minmax) # seems comparable to iglu
    sd = np.std(df[GLUCOSE].dropna())
    N = len(minmax)
 
@@ -271,7 +270,7 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
       delta = differences[prev_j:j+1,j]
 
       max_v = np.max(delta)
-      i = np.argmax(delta) + prev_j - 1
+      i = np.argmax(delta) + prev_j
 
       if max_v >= sd:
          for k in range(j, N):
@@ -289,13 +288,13 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
          j += 1
    
    # MAGE-
-   mage_minus_heights = pd.Series()
-   mage_minus_tp_pairs = {}
+   mage_minus_heights = pd.Series() # seems validated
+   mage_minus_tp_pairs = {} # almost identical, slightly different near the end
    j = 0; prev_j = 0
    while j < N:
       delta = differences[prev_j:j+1,j]
-      min_v = np.min(delta)
-      i = np.argmin(delta) + prev_j - 1
+      min_v = np.min(delta) # seems validated
+      i = np.argmin(delta) + prev_j
 
       if min_v <= (-1 * sd):
          for k in range(j, N):
@@ -314,6 +313,13 @@ def MAGE(df: pd.DataFrame, short_ma: int = 9, long_ma: int = 32) -> float:
 
    plus_first = np.where(mage_plus_heights.size > 0 and ((mage_minus_heights.size == 0) or (mage_plus_tp_pairs[0][1] <= mage_minus_tp_pairs[0][0])), True, False)
    return float(np.where(plus_first, np.mean(mage_plus_heights), np.mean(mage_minus_heights.abs())))
+
+def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.DataFrame:
+   if timedelta < INTERVAL:
+      raise Exception("Given timedelta must be greater than resampling interval.")
+
+   positiondelta = round(timedelta / INTERVAL)
+   return df[GLUCOSE].diff(periods=positiondelta) / timedelta
 
 # ------------------------- EVENT-BASED ----------------------------
 
@@ -387,7 +393,6 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["j-index"] = j_index(data)
 
         features["CONGA"] = CONGA(data)
-        features["MAD"] = MAD(data)
         features["MAG"] = MAG(data)
         features["MODD"] = MODD(data)
         #features["MAGE"] = MAGE(data)
