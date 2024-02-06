@@ -70,6 +70,7 @@ def import_data(path: str, interval: int = 5, max_gap = int) -> pd.DataFrame:
 
     df = df[[time_name, glucose_name]].copy()
     df = resample_data(df, interval, max_gap)
+    df = df.dropna(subset=[glucose_name])
     df = chunk_day(chunk_time(df))
     df["id"] = id
 
@@ -119,7 +120,7 @@ def interpolate_data(df: pd.DataFrame, max_gap = int) -> pd.DataFrame:
     s = s.ne(s.shift()).cumsum()
 
     m = df.groupby([s, df[glucose_name].isnull()])[glucose_name].transform('size').where(df[glucose_name].isnull())
-    interpolated_df = df.interpolate(method="time", limit_area="inside").mask(m > int(max_gap / resample_interval))
+    interpolated_df = df.interpolate(method="time", limit_area="inside").mask(m >= int(max_gap / resample_interval))
 
     return interpolated_df
 
