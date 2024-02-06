@@ -8,7 +8,7 @@ GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
 INTERVAL = config['variables'].getint('interval')
 
-def episodes(
+def get_episodes(
     df: pd.DataFrame,
     hypo_lvl1: int = 70,
     hypo_lvl2: int = 54,
@@ -16,44 +16,40 @@ def episodes(
     hyper_lvl2: int = 250,
     min_length: int = 15
 ) -> pd.DataFrame:
-   episode_df = pd.DataFrame()
+   episodes = pd.DataFrame()
    for id, data in df.groupby('id'):
       timegap = lambda timedelta: timedelta.total_seconds() / 60
 
-      # hypo
-      hypo_df = data[data[GLUCOSE] <= hypo_lvl1]
-      hypo_df["gap"] = hypo_df[TIME].diff().apply(timegap)
+      episode_df = data[(data[GLUCOSE] <= hypo_lvl1) | (data[GLUCOSE] >= hyper_lvl1)].copy()
+      print(episode_df)
+      episode_df.reset_index(drop=True, inplace=True)
+      episode_df["gap"] = episode_df[TIME].diff().apply(timegap)
 
-      edges = list(hypo_df[hypo_df["gap"] != INTERVAL][TIME])
-      edges.insert(0, hypo_df[TIME].iloc[0]); edges.append(hypo_df[TIME].iloc[-1])
+      edges = episode_df.index[episode_df["gap"] != INTERVAL].to_list()
+      edges.insert(0,0); edges.append(-1)
 
+      get = lambda loc, col: episode_df.iloc[loc][col]
       for index in range(1, len(edges)):
-         episode_length = timegap(edges[index] - edges[index - 1])
-         if episode_length >= min_length:
-            level = 2 if (hypo_df[hypo_df[GLUCOSE] <= hypo_lvl2].shape[0] > min_length / INTERVAL) else 1
-            description = f"hypoglycemic episode of level {level} occurring from {edges[index - 1]} to {edges[index]}"
-            event = pd.DataFrame.from_records([{"id": id, TIME: edges[index - 1], "before": 0, "after": episode_length, 
-                                               "type": f"hypo level {level} episode", "description": description}])
-            episode_df = pd.concat([episode_df, event]) 
-             
-      # hyper
-      """
-      hyper_df = data[data[GLUCOSE] >= hyper_lvl1]
-      hyper_df["gap"] = hyper_df[TIME].diff().apply(timegap)
+         offset = 0 if (index == len(edges) - 1) else 1
+         end_i = edges[index] - offset # index of the end of the episode (inclusive! - that's what the offset is for)
+         start_i = edges[index - 1] # index of the start of the episode
+         episode_length = timegap(get(end_i, TIME) - get(start_i, TIME))
 
-      edges = list(hyper_df[hyper_df["gap"] != INTERVAL][TIME])
-      edges.insert(0, hyper_df[TIME].iloc[0]); edges.append(hyper_df[TIME].iloc[-1])
-
-      for index in range(1, len(edges)):
-         episode_length = timegap(edges[index] - edges[index - 1])
          if episode_length >= min_length:
-            level = 2 if (hyper_df[hyper_df[GLUCOSE] >= hyper_lvl2].shape[0] > min_length / INTERVAL) else 1
-            description = f"hyperglycemic episode of level {level} occurring from {edges[index - 1]} to {edges[index]}"
-            event = pd.DataFrame.from_records([{"id": id, TIME: edges[index - 1], "before": 0, "after": episode_length, 
-                                               "type": f"hyper level {level} episode", "description": description}])
-            episode_df = pd.concat([episode_df, event])       
-   """
-   return episode_df
+            type = "hyper" if (get(start_i, GLUCOSE) >= hyper_lvl1) else "hypo"
+
+            level = 1
+            current_episode = episode_df.iloc[start_i:end_i+offset]
+            if ((type == "hyper" and (current_episode[current_episode[GLUCOSE] >= hyper_lvl2].shape[0] > (min_length / INTERVAL))) or 
+                (type == "hypo" and (current_episode[current_episode[GLUCOSE] <= hypo_lvl2].shape[0] > (min_length / INTERVAL)))):
+               level = 2
+
+            description = f"{type}glycemic episode of level {level} occurring from {get(start_i, TIME)} to {get(end_i, TIME)}"
+            event = pd.DataFrame.from_records([{"id": id, TIME: get(start_i, TIME), "before": 0, "after": episode_length, 
+                                               "type": f"{type} level {level} episode", "description": description}])
+            episodes = pd.concat([episodes, event]) 
+
+   return episodes
 
 def excursions(df: pd.DataFrame) -> pd.Series:
     """
@@ -92,9 +88,6 @@ def excursions(df: pd.DataFrame) -> pd.Series:
             excursions.append(copy.idxmin())
 
     return pd.Series(excursions)
-
-
-
 
 def retrieve_event_data(
     df: pd.DataFrame,
