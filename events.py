@@ -48,7 +48,6 @@ def episodes_helper(
             end_data = data.iloc[end_index + 1 : end_index + 1 + end_counts][GLUCOSE]
             outside_threshold = np.where(end_data >= threshold, True, False) if type == "hypo" else np.where(end_data <= threshold, True, False)
             if False in outside_threshold: # check if episode ends within 15 min
-               edges.pop(index + 2)
                edges.pop(index + 1) # this episode does not end within 15 min, so combine this episode with the next
                continue
 
@@ -82,43 +81,59 @@ def get_episodes(
 
    return output 
 
-def excursions(df: pd.DataFrame) -> pd.Series:
-    """
-    Returns a Pandas Series containing the Timestamps of glucose excursions
-    """
-    sd = std(df)
-    ave = mean(df)
+def get_excursions(df: pd.DataFrame, z: int = 2) -> pd.DataFrame:
+   excursions = pd.DataFrame()
+   for id, data in df.groupby('id'):
+      sd = data[GLUCOSE].std()
+      mean = data[GLUCOSE].mean()
+      upper = mean + (z * sd)
+      lower = mean - (z * sd)
 
-    outlier_df = df[(df[GLUCOSE] >= ave + (2 * sd)) | (df[GLUCOSE] <= ave - (2 * sd))].copy()
+      peaks = data[(data[GLUCOSE].shift(1) < data[GLUCOSE]) & (data[GLUCOSE].shift(-1) < data[GLUCOSE])][TIME].copy()
+      peaks.reset_index(drop=True, inplace=True)
+      nadirs = data[(data[GLUCOSE].shift(1) > data[GLUCOSE]) & (data[GLUCOSE].shift(-1) > data[GLUCOSE])][TIME].copy()
+      nadirs.reset_index(drop=True, inplace=True)
 
-    # calculate the differences between each of the timestamps
-    outlier_df.reset_index(inplace=True)
-    outlier_df["timedeltas"] = outlier_df[TIME].diff()[1:]
 
-    # find the gaps between the times
-    gaps = outlier_df[outlier_df["timedeltas"] > pd.Timedelta(minutes=INTERVAL)][TIME]
+      outliers = data[(data[GLUCOSE] >= upper) | (data[GLUCOSE] <= lower)].copy()
+      outliers.reset_index(drop=True, inplace=True)
 
-    # adding initial and final timestamps so excursions at the start/end are included
-    initial = pd.Series(df[TIME].iloc[0] - pd.Timedelta(seconds=1))
-    final = pd.Series(df[TIME].iloc[-1] + pd.Timedelta(seconds=1))
-    gaps = pd.concat([initial, gaps, final])
+      # calculate the differences between each of the timestamps
+      timegap = lambda timedelta: timedelta.total_seconds() / 60
+      outliers["gaps"] = outliers[TIME].diff().apply(timegap)
 
-    # getting the timestamp of the peak within each excursion
-    excursions = []
-    for i in range(len(gaps) - 1):
-        copy = outlier_df[
-            (outlier_df[TIME] >= gaps.iloc[i])
-            & (outlier_df[TIME] < gaps.iloc[i + 1])
-        ][[TIME, GLUCOSE]].copy()
-        copy.set_index(TIME, inplace=True)
-        if np.min(copy) > ave:
-            # local max
-            excursions.append(copy.idxmax())
-        else:
-            # local min
-            excursions.append(copy.idxmin())
+      edges = outliers.index[outliers["gaps"] != INTERVAL].to_list()
+      edges.append(-1)
 
-    return pd.Series(excursions)
+      for i in range(len(edges) - 1):
+         type = "hyper" if outliers.iloc[edges[i]][GLUCOSE] > mean else "hypo"
+         offset = 0 if i == len(edges) - 2 else 1
+         start_time = outliers.iloc[edges[i]][TIME]
+         start_index = data.index[data[TIME] == start_time].to_list()[0]
+         end_time = outliers.iloc[edges[i+1] - offset][TIME]
+         end_index = data.index[data[TIME] == end_time].to_list()[0]
+
+         if start_index != 0:
+            extrema = peaks if type == "hypo" else nadirs
+            extrema_index = (abs(extrema - start_time)).idxmin()
+            print(extrema)
+            print(extrema_index)
+            start_time = extrema.iloc[extrema_index]
+
+         if end_index != data.shape[0] - 1:
+            extrema = peaks if type == "hypo" else nadirs
+            extrema_index = (abs(extrema - end_time)).idxmin()
+            print(extrema)
+            print(extrema_index)
+            end_time = extrema.iloc[extrema_index]
+
+         episode_length = timegap(end_time - start_time)
+         description = f"{type}glycemic excursion occurring from {start_time} to {end_time}"
+         event = pd.DataFrame.from_records([{"id": id, TIME: start_time, "before": 0, "after": episode_length, 
+                                             "type": f"{type} excursion", "description": description}])
+         excursions = pd.concat([excursions, event])
+
+   return excursions
 
 def event_summary(events: pd.DataFrame, type: str = "type") -> pd.Series:
     return events[type].value_counts()
