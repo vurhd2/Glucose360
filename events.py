@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from features import create_features
+from scipy.integrate import trapezoid
 import configparser
 import math
 
@@ -18,7 +18,7 @@ def episodes_helper(
    level: int, 
    min_length: int, 
    end_length: int
-   ):
+) -> pd.DataFrame:
    timegap = lambda timedelta: timedelta.total_seconds() / 60
    episodes = pd.DataFrame()
 
@@ -94,7 +94,6 @@ def get_excursions(df: pd.DataFrame, z: int = 2) -> pd.DataFrame:
       nadirs = data[(data[GLUCOSE].shift(1) > data[GLUCOSE]) & (data[GLUCOSE].shift(-1) > data[GLUCOSE])][TIME].copy()
       nadirs.reset_index(drop=True, inplace=True)
 
-
       outliers = data[(data[GLUCOSE] >= upper) | (data[GLUCOSE] <= lower)].copy()
       outliers.reset_index(drop=True, inplace=True)
 
@@ -116,15 +115,11 @@ def get_excursions(df: pd.DataFrame, z: int = 2) -> pd.DataFrame:
          if start_index != 0:
             extrema = peaks if type == "hypo" else nadirs
             extrema_index = (abs(extrema - start_time)).idxmin()
-            print(extrema)
-            print(extrema_index)
             start_time = extrema.iloc[extrema_index]
 
          if end_index != data.shape[0] - 1:
             extrema = peaks if type == "hypo" else nadirs
             extrema_index = (abs(extrema - end_time)).idxmin()
-            print(extrema)
-            print(extrema_index)
             end_time = extrema.iloc[extrema_index]
 
          episode_length = timegap(end_time - start_time)
@@ -135,8 +130,8 @@ def get_excursions(df: pd.DataFrame, z: int = 2) -> pd.DataFrame:
 
    return excursions
 
-def event_summary(events: pd.DataFrame, type: str = "type") -> pd.Series:
-    return events[type].value_counts()
+def get_curated_events(df: pd.DataFrame) -> pd.DataFrame:
+   return pd.concat([get_episodes(df), get_excursions(df)])
 
 def retrieve_event_data(
     df: pd.DataFrame,
@@ -166,16 +161,15 @@ def retrieve_event_data(
         final = datetime + pd.Timedelta(row[after], "m")
 
         patient_data = df.loc[id]
-        data = patient_data[
-            (patient_data[TIME] >= initial) & (patient_data[TIME] <= final)
-        ].copy()
+        data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy()
 
         data["id"] = id
         data[desc] = row[desc]
 
         event_data = pd.concat([event_data, data])
 
-    event_data = event_data.set_index(["id"])
+    if event_data.shape[0] != 0:
+      event_data = event_data.set_index(["id"])
 
     return event_data
 
@@ -187,15 +181,126 @@ def create_event_features(
     type: str = "type",
     desc: str = "description",
 ) -> pd.DataFrame:
-    """
-    Returns a multiindexed Pandas DataFrame containing metrics for the patient data during their respective 'events'
-    @param df      a multiindexed Pandas DataFrame containing all the relevant patient data
-    @param events  a single indexed Pandas DataFrame, with each row specifying a single event in the form of
-                   an id, a datetime, # of hours before the datetime to include, # of hours after to include, and a desc
-    @param before  name of the column specifying the amount of hours before to include
-    @param after   name of the column specifying the amount of hours after to include
-    @param type    name of the column specifying the 'type' of event (like 'meal', 'exercise', etc.)
-    @param desc    name of the column describing this particular event 
-    """
-    event_data = retrieve_event_data(df, events, before, after, type, desc)
-    return create_features(event_data, events=True)
+   """
+   Returns a multiindexed Pandas DataFrame containing metrics for the patient data during their respective 'events'
+   @param df      a multiindexed Pandas DataFrame containing all the relevant patient data
+   @param events  a single indexed Pandas DataFrame, with each row specifying a single event in the form of
+                  an id, a datetime, # of hours before the datetime to include, # of hours after to include, and a desc
+   @param before  name of the column specifying the amount of hours before to include
+   @param after   name of the column specifying the amount of hours after to include
+   @param type    name of the column specifying the 'type' of event (like 'meal', 'exercise', etc.)
+   @param desc    name of the column describing this particular event 
+   """
+   event_data = retrieve_event_data(df, events, before, after, type, desc)
+   return create_features(event_data, events=True)
+
+def event_summary(events: pd.DataFrame, type: str = "type") -> pd.Series:
+   return events[type].value_counts()
+
+def episode_statistics(
+   df: pd.DataFrame,
+   events: pd.DataFrame,
+   id: str,
+   before: str = "before",
+   after: str = "after",
+   type: str = "type",
+   desc: str = "description"
+) -> pd.DataFrame:
+   "Calculates episode-specific metrics on the given DataFrame (helper function)"
+   hypo_lvl1 = events[events[type] == "hypo level 1 episode"]
+   hypo_lvl2 = events[events[type] == "hypo level 2 episode"]
+   hyper_lvl1 = events[events[type] == "hyper level 1 episode"]
+   hyper_lvl2 = events[events[type] == "hyper level 2 episode"]
+
+   total_days = (df.iloc[-1][TIME] - df.iloc[0][TIME]).total_seconds() / (3600 * 24)
+
+   # mean episodes per day
+   hypo_lvl1_day = hypo_lvl1.shape[0] / total_days
+   hypo_lvl2_day = hypo_lvl2.shape[0] / total_days
+   hyper_lvl1_day = hyper_lvl1.shape[0] / total_days
+   hyper_lvl2_day = hypo_lvl2.shape[0] / total_days
+
+   # mean episode duration per day
+   hypo_lvl1_duration = hypo_lvl1[after].mean() / total_days or np.nan
+   hypo_lvl2_duration = hypo_lvl2[after].mean() / total_days or np.nan
+   hyper_lvl1_duration = hyper_lvl1[after].mean() / total_days or np.nan
+   hyper_lvl2_duration = hyper_lvl2[after].mean() / total_days or np.nan
+
+   # mean glucose per episode (hypo / hyper)
+   hypo_mean_glucose = np.nan
+   if hypo_lvl1_day != 0:
+      hypo_glucose_data = retrieve_event_data(df, hypo_lvl1).loc[id]
+      hypo_mean_glucose = np.mean([data[GLUCOSE].mean() for description, data in hypo_glucose_data.groupby(desc)])
+
+   hyper_mean_glucose = np.nan
+   if hyper_lvl1_day != 0:
+      hyper_glucose_data = retrieve_event_data(df, hyper_lvl1).loc[id]
+      hyper_mean_glucose = np.mean([data[GLUCOSE].mean() for description, data in hyper_glucose_data.groupby(desc)])
+
+   return pd.DataFrame.from_records([{"mean hypoglycemic level 1 episodes per day": hypo_lvl1_day,
+                                      "mean hypoglycemic level 2 episodes per day": hypo_lvl2_day,
+                                      "mean hyperglycemic level 1 episodes per day": hyper_lvl1_day,
+                                      "mean hyperglycemic level 2 episodes per day": hyper_lvl2_day,
+                                      "mean hypoglycemic level 1 duration per day": hypo_lvl1_duration,
+                                      "mean hypoglycemic level 2 duration per day": hypo_lvl2_duration,
+                                      "mean hyperglycemic level 1 duration per day": hyper_lvl1_duration,
+                                      "mean hyperglycemic level 2 duration per day": hyper_lvl2_duration,
+                                      "mean hypoglycemic glucose value (level 1) per day": hypo_mean_glucose,
+                                      "mean hyperglycemic glucose value (level 1) per day": hyper_mean_glucose,}])
+
+def AUC(df: pd.DataFrame) -> float:
+    return trapezoid(df[GLUCOSE], dx=INTERVAL)
+
+def iAUC(df: pd.DataFrame, level: int = 70) -> float:
+    data = df.copy()
+    data[GLUCOSE] = data[GLUCOSE] - level
+    data.loc[data[GLUCOSE] < 0, GLUCOSE] = 0
+    return AUC(data)
+
+def baseline(df: pd.DataFrame) -> float:
+    return df[TIME].iloc[0]
+
+def peak(df: pd.DataFrame) -> float:
+    return np.max(df[GLUCOSE])
+
+def delta(df: pd.DataFrame) -> float:
+    return peak(df) - baseline(df)
+
+def excursion_statistics(
+   df: pd.DataFrame,
+   events: pd.DataFrame, 
+   id: str,
+   before: str = "before",
+   after: str = "after",
+   type: str = "type",
+   desc: str = "description"
+) -> pd.DataFrame:
+   patient = events[events['id'] == id].copy()
+   total_days = (data.iloc[-1][TIME] - data.iloc[0][TIME]).total_seconds() / (3600 * 24)
+
+   num_hypo_excursions = patient[patient[type] == "hypo excursion"].shape[0]
+   num_hyper_excursions = patient[patient[type] == "hyper excursion"].shape[0]
+   hypo_excursions_per_day = num_hypo_excursions / total_days
+   hyper_excursions_per_day = num_hyper_excursions / total_days
+   excursions_per_day = hypo_excursions_per_day + hyper_excursions_per_day
+
+   return
+
+def event_statistics(
+   df: pd.DataFrame,
+   events: pd.DataFrame, 
+   before: str = "before",
+   after: str = "after",
+   type: str = "type",
+   desc: str = "description"
+) -> pd.DataFrame:
+   
+   statistics = pd.DataFrame()
+
+   for id, data in df.groupby('id'):
+      patient = events[events['id'] == id]
+      stats = pd.concat([pd.DataFrame.from_records([{'id': id}]), episode_statistics(data, patient, id)], axis=1)
+      statistics = pd.concat([statistics, stats])
+   
+   statistics.set_index('id', inplace=True)
+   return statistics
