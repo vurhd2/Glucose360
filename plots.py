@@ -63,14 +63,16 @@ def daily_plot(
     plot.fig.suptitle(f"Glucose (mg/dL) vs. Timestamp for {id}")
 
     # plotting vertical lines to represent the events
-    if events is not None:
-        event_data = events.set_index("id").loc[id]
-        for ax in plot.axes.flat:
-            if isinstance(event_data, pd.DataFrame):
-                for index, row in event_data.iterrows():
-                    ax.axvline(pd.to_datetime(row[TIME]), color="orange")
-            else:
-                ax.axvline(pd.to_datetime(event_data[TIME]), color="orange")
+    event_data = events.set_index("id").loc[id] if events is not None else None
+    if event_data is not None:
+      if isinstance(event_data, pd.DataFrame):
+         event_types = event_data['type'].unique()
+         colors = plt.cm.get_cmap('nipy_spectral', len(event_types))
+         color_map = {event_type: colors(i) for i, event_type in enumerate(event_types)}
+         for index, row in event_data.iterrows():
+            plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['type']], label=row['type'])
+      else:
+         plt.axvline(pd.to_datetime(event_data[TIME]), color="orange", label=event_data['type'])
 
     plt.ylim(35, 405)
     plt.show()
