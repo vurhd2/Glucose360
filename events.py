@@ -81,13 +81,18 @@ def get_episodes(
 
    return output 
 
-def get_excursions(df: pd.DataFrame, z: int = 2) -> pd.DataFrame:
+def get_excursions(
+   df: pd.DataFrame, 
+   z: int = 2, 
+   min_length: int = 15,
+   end_length: int = 15
+) -> pd.DataFrame:
    excursions = pd.DataFrame()
    for id, data in df.groupby('id'):
       sd = data[GLUCOSE].std()
       mean = data[GLUCOSE].mean()
       upper = mean + (z * sd)
-      lower = mean - (z * sd)
+      lower = mean - (z * sd) #75.6
 
       peaks = data[(data[GLUCOSE].shift(1) < data[GLUCOSE]) & (data[GLUCOSE].shift(-1) < data[GLUCOSE])][TIME].copy()
       peaks.reset_index(drop=True, inplace=True)
@@ -103,8 +108,8 @@ def get_excursions(df: pd.DataFrame, z: int = 2) -> pd.DataFrame:
 
       edges = outliers.index[outliers["gaps"] != INTERVAL].to_list()
       edges.append(-1)
-
-      for i in range(len(edges) - 1):
+      i = 0
+      while i < len(edges) - 1:
          type = "hyper" if outliers.iloc[edges[i]][GLUCOSE] > mean else "hypo"
          offset = 0 if i == len(edges) - 2 else 1
          start_time = outliers.iloc[edges[i]][TIME]
@@ -112,21 +117,38 @@ def get_excursions(df: pd.DataFrame, z: int = 2) -> pd.DataFrame:
          end_time = outliers.iloc[edges[i+1] - offset][TIME]
          end_index = data.index[data[TIME] == end_time].to_list()[0]
 
-         if start_index != 0:
-            extrema = peaks if type == "hypo" else nadirs
-            extrema_index = (abs(extrema - start_time)).idxmin()
-            start_time = extrema.iloc[extrema_index]
+         excursion_length = timegap(end_time - start_time)
+         if excursion_length >= min_length:
+            if offset != 0: # not the very last episode
+               end_counts = math.ceil(end_length / INTERVAL)
+               
+               last_index = data.reset_index().index[data[TIME] == end_time].to_list()[0]
+               last_data = data.iloc[last_index + 1 : last_index + 1 + end_counts][GLUCOSE]
+               print(last_data)
+               outside_threshold = np.where(last_data <= upper if type == "hyper" else last_data >= lower, True, False)
+               print(outside_threshold)
+               if False in outside_threshold: # check if excursion ends within 15 min
+                  edges.pop(i + 1) # this excursion does not end within 15 min, so combine this episode with the next
+                  continue
+               
+            outliers.set_index(TIME, inplace=True)
+            last_point = edges[i+1] if offset != 0 else None
+            timestamp = outliers.iloc[edges[i]:last_point][GLUCOSE].idxmax() if type == "hyper" else outliers.iloc[edges[i]:last_point][GLUCOSE].idxmin()
+            outliers.reset_index(inplace=True)
 
-         if end_index != data.shape[0] - 1:
             extrema = peaks if type == "hypo" else nadirs
-            extrema_index = (abs(extrema - end_time)).idxmin()
-            end_time = extrema.iloc[extrema_index]
-
-         episode_length = timegap(end_time - start_time)
-         description = f"{type}glycemic excursion occurring from {start_time} to {end_time}"
-         event = pd.DataFrame.from_records([{"id": id, TIME: start_time, "before": 0, "after": episode_length, 
-                                             "type": f"{type} excursion", "description": description}])
-         excursions = pd.concat([excursions, event])
+            if start_index != 0:
+               start_time = extrema[extrema < timestamp].iloc[-1]
+            if end_index != data.shape[0] - 1:
+               end_time = extrema[extrema > timestamp].iloc[0]
+            
+            description = f"{type}glycemic excursion occurring from {start_time} to {end_time}"
+            event = pd.DataFrame.from_records([{"id": id, TIME: timestamp, "before": timegap(timestamp - start_time), 
+                                                "after": timegap(end_time - timestamp), 
+                                                "type": f"{type} excursion", "description": description}])
+            excursions = pd.concat([excursions, event])
+         
+         i += 1
 
    return excursions
 
