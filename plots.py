@@ -10,35 +10,22 @@ GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
 INTERVAL = config['variables'].getint('interval')
 
-"""
-Graphs (and possibly saves) daily plots for all of the patients in the given DataFrame
-@param df         a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-@param events     a DataFrame containing event timeframes for some (or all) of the given patients
-@param chunk_day  a boolean indicating whether to split weekdays and weekends
-@param save       a boolean indicating whether to download the graphs locally
-"""
-
-
 def daily_plot_all(
     df: pd.DataFrame,
     events: pd.DataFrame = None,
     chunk_day: bool = False,
     save: bool = False,
 ):
+    """
+    Graphs (and possibly saves) daily plots for all of the patients in the given DataFrame
+    @param df         a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+    @param events     a DataFrame containing event timeframes for some (or all) of the given patients
+    @param chunk_day  a boolean indicating whether to split weekdays and weekends
+    @param save       a boolean indicating whether to download the graphs locally
+    """
     sns.set_theme()
     for id, data in df.groupby("id"):
         daily_plot(data, id, events, chunk_day, save)
-
-
-"""
-Only graphs (and possibly saves) a daily plot for the given patient
-@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-@param id   the id of the patient whose data is graphed
-@param events  a DataFrame containing event timeframes for some (or all) of the given patients
-@param chunk_day  a boolean indicating whether to split weekdays and weekends
-@param save a boolean indicating whether to download the graphs locally
-"""
-
 
 def daily_plot(
     df: pd.DataFrame,
@@ -47,6 +34,14 @@ def daily_plot(
     chunk_day: bool = False,
     save: bool = False,
 ):
+    """
+    Only graphs (and possibly saves) a daily plot for the given patient
+    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+    @param id   the id of the patient whose data is graphed
+    @param events  a DataFrame containing event timeframes for some (or all) of the given patients
+    @param chunk_day  a boolean indicating whether to split weekdays and weekends
+    @param save a boolean indicating whether to download the graphs locally
+    """
     data = df.loc[id]
 
     data[TIME] = pd.to_datetime(data[TIME])
@@ -74,39 +69,31 @@ def daily_plot(
       else:
          plt.axvline(pd.to_datetime(event_data[TIME]), color="orange", label=event_data['type'])
 
+    plt.legend(loc='right', bbox_to_anchor=(1.0,1.05))
     plt.ylim(35, 405)
-    plt.show()
-
-    if save:
-        plot.savefig("./plots/" + str(id) + "Daily.png")
-
-
-"""
-Sequentially produces spaghetti plots for all the given patients
-@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-@param chunk_day  a boolean indicating whether to split weekdays and weekends
-@param save a boolean indicating whether to download the graphs locally
-"""
-
+    plt.show() if not save else plot.savefig("./plots/" + str(id) + "Daily.png")
 
 def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, save: bool = False):
+    """
+    Sequentially produces spaghetti plots for all the given patients
+    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+    @param chunk_day  a boolean indicating whether to split weekdays and weekends
+    @param save a boolean indicating whether to download the graphs locally
+    """
     sns.set_theme()
     for id, data in df.groupby("id"):
         spaghetti_plot(data, id, chunk_day, save)
 
-
-"""
-Graphs a spaghetti plot for the given patient
-@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-@param id   the id of the patient whose data should be plotted
-@param chunk_day  a boolean indicating whether to split weekdays and weekends
-@param save a boolean indicating whether to download the graphs locally
-"""
-
-
 def spaghetti_plot(
     df: pd.DataFrame, id: str, chunk_day: bool = False, save: bool = False
 ):
+    """
+    Graphs a spaghetti plot for the given patient
+    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+    @param id   the id of the patient whose data should be plotted
+    @param chunk_day  a boolean indicating whether to split weekdays and weekends
+    @param save a boolean indicating whether to download the graphs locally
+    """
     data = df.loc[id]
 
     data.reset_index(inplace=True)
@@ -143,34 +130,26 @@ def spaghetti_plot(
     plt.ylim(35, 405)
     for ax in plot.axes.flat:
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
-    plt.show()  # might result in an empty plot based on osx or matplotlib version apparently
-
-    if save:
-        plt.savefig("./plots/" + str(id) + "Spaghetti.png", bbox_inches="tight")
-
-
-"""
-Displays (and possibly saves) AGP Plots for each patient in the given DataFrame
-@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-@param save a boolean indicating whether to download the graphs locally
-"""
-
+    plt.show() if not save else plt.savefig("./plots/" + str(id) + "Spaghetti.png", bbox_inches="tight")
 
 def AGP_plot_all(df: pd.DataFrame, save: bool = False):
+    """
+    Displays (and possibly saves) AGP Plots for each patient in the given DataFrame
+    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+    @param save a boolean indicating whether to download the graphs locally
+    """
     sns.set_theme()
     for id, data in df.groupby("id"):
         AGP_plot(data, id, save)
 
 
-"""
-Displays (and possibly saves) an AGP Plot for only the given patient in the DataFrame
-@param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-@param id   the id of the single patient whose data is being graphed
-@param save a boolean indicating whether to download the graphs locally
-"""
-
-
 def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
+    """
+    Displays (and possibly saves) an AGP Plot for only the given patient in the DataFrame
+    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+    @param id   the id of the single patient whose data is being graphed
+    @param save a boolean indicating whether to download the graphs locally
+    """
     if INTERVAL > 5:
         raise Exception(
             "Data needs to have measurement intervals at most 5 minutes long"
@@ -254,7 +233,4 @@ def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
             color="#C9D4E9",
         )
 
-    plt.show()
-
-    if save:
-        plt.savefig("./plots/" + str(id) + "AGP.png", bbox_inches="tight")
+    plt.show() if not save else plt.savefig("./plots/" + str(id) + "AGP.png", bbox_inches="tight")
