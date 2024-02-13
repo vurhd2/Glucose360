@@ -124,9 +124,7 @@ def get_excursions(
                
                last_index = data.reset_index().index[data[TIME] == end_time].to_list()[0]
                last_data = data.iloc[last_index + 1 : last_index + 1 + end_counts][GLUCOSE]
-               print(last_data)
                outside_threshold = np.where(last_data <= upper if type == "hyper" else last_data >= lower, True, False)
-               print(outside_threshold)
                if False in outside_threshold: # check if excursion ends within 15 min
                   edges.pop(i + 1) # this excursion does not end within 15 min, so combine this episode with the next
                   continue
@@ -138,9 +136,9 @@ def get_excursions(
 
             extrema = peaks if type == "hypo" else nadirs
             if start_index != 0:
-               start_time = extrema[extrema < timestamp].iloc[-1]
+               start_time = extrema[extrema <= start_time].iloc[-1]
             if end_index != data.shape[0] - 1:
-               end_time = extrema[extrema > timestamp].iloc[0]
+               end_time = extrema[extrema >= end_time].iloc[0]
             
             description = f"{type}glycemic excursion occurring from {start_time} to {end_time}"
             event = pd.DataFrame.from_records([{"id": id, TIME: timestamp, "before": timegap(timestamp - start_time), 
