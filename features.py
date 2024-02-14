@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from scipy.integrate import trapezoid
 import configparser
 
 config = configparser.ConfigParser()
@@ -41,51 +40,6 @@ def percent_time_in_range(df: pd.DataFrame, low: int = 70, high: int = 180) -> f
     time_in_range = len(in_range_df)
     total_time = len(df)
     return (100 * time_in_range / total_time) if total_time > 0 else np.nan
-
-
-"""
-Returns a Pandas Series containing the Timestamps of glucose excursions
-"""
-
-
-def excursions(df: pd.DataFrame) -> pd.Series:
-    sd = std(df)
-    ave = mean(df)
-
-    outlier_df = df[
-        (df[GLUCOSE] >= ave + (2 * sd)) | (df[GLUCOSE] <= ave - (2 * sd))
-    ].copy()
-
-    # calculate the differences between each of the timestamps
-    outlier_df.reset_index(inplace=True)
-    outlier_df["timedeltas"] = outlier_df[TIME].diff()[1:]
-
-    # find the gaps between the times
-    gaps = outlier_df[outlier_df["timedeltas"] > pd.Timedelta(minutes=INTERVAL)][
-        TIME
-    ]
-
-    # adding initial and final timestamps so excursions at the start/end are included
-    initial = pd.Series(df[TIME].iloc[0] - pd.Timedelta(seconds=1))
-    final = pd.Series(df[TIME].iloc[-1] + pd.Timedelta(seconds=1))
-    gaps = pd.concat([initial, gaps, final])
-
-    # getting the timestamp of the peak within each excursion
-    excursions = []
-    for i in range(len(gaps) - 1):
-        copy = outlier_df[
-            (outlier_df[TIME] >= gaps.iloc[i])
-            & (outlier_df[TIME] < gaps.iloc[i + 1])
-        ][[TIME, GLUCOSE]].copy()
-        copy.set_index(TIME, inplace=True)
-        if np.min(copy) > ave:
-            # local max
-            excursions.append(copy.idxmax())
-        else:
-            # local min
-            excursions.append(copy.idxmin())
-
-    return pd.Series(excursions)
 
 def ADRR(df: pd.DataFrame) -> float:
    data = df.copy()
@@ -196,24 +150,29 @@ def MODD(df: pd.DataFrame, lag: int = 1) -> float:
 def mean_absolute_differences(df: pd.DataFrame) -> float:
     return np.mean(np.abs(df[GLUCOSE].diff()))
 
-def median_absolute_deviation(df: pd.DataFrame) -> float:
-    return np.nanmedian(np.abs(df[GLUCOSE] - np.mean(df[GLUCOSE])))
+def median_absolute_deviation(df: pd.DataFrame, constant: float = 1.4826) -> float:
+    return constant * np.nanmedian(np.abs(df[GLUCOSE] - np.median(df[GLUCOSE])))
 
 def MAG(df: pd.DataFrame) -> float:
-    time_diff = (df[TIME].iloc[-1] - df[TIME].iloc[0]).total_seconds() / 3600
-    return np.sum(df[GLUCOSE].diff().abs()) / time_diff
+   df.dropna(subset=[GLUCOSE], inplace=True)
+   data = df[(df[TIME].dt.minute == (df[TIME].dt.minute).iloc[0]) & (df[TIME].dt.second == (df[TIME].dt.second).iloc[0])][GLUCOSE]
+   return np.sum(data.diff().abs()) / data.size
 
 def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    averages = pd.DataFrame()
    averages[GLUCOSE] = df[GLUCOSE]
+   averages.reset_index(drop=True, inplace=True)
 
    # calculate rolling means, iglu does right align instead of center
    averages["MA_Short"] = averages[GLUCOSE].rolling(window=short_ma, min_periods=1).mean()
    averages["MA_Long"] = averages[GLUCOSE].rolling(window=long_ma, min_periods=1).mean()
 
+   averages = averages.loc[averages[GLUCOSE].first_valid_index():averages[GLUCOSE].last_valid_index()]
+   averages.reset_index(drop=True, inplace=True)
+
    # fill in leading NaNs due to moving average calculation
-   averages["MA_Short"].iloc[:short_ma] = averages["MA_Short"].iloc[short_ma]
-   averages["MA_Long"].iloc[:long_ma] = averages["MA_Long"].iloc[long_ma]
+   averages["MA_Short"].iloc[:short_ma-1] = averages["MA_Short"].iloc[short_ma-1]
+   averages["MA_Long"].iloc[:long_ma-1] = averages["MA_Long"].iloc[long_ma-1]
    averages["DELTA_SL"] = averages["MA_Short"] - averages["MA_Long"]
 
    # AVERAGES SEEM TO BE VALIDATED
@@ -234,14 +193,14 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
          if current_average * previous_average < 0:
             type = np.where(current_average < previous_average, "nadir", "peak")
             crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])     
-      elif (not np.isnan(current_average) and (current_average * average(crosses["location"].iloc[-1]) < 0)): # VALIDATE THIS LATER
-         prev_delta = average(crosses["location"].iloc[-1])
-         type = np.where(current_average < prev_delta, "nadir", "peak")
-         crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])
+         elif (not np.isnan(current_average) and (current_average * average(crosses["location"].iloc[-1]) < 0)): # VALIDATE THIS LATER
+            prev_delta = average(crosses["location"].iloc[-1])
+            type = np.where(current_average < prev_delta, "nadir", "peak")
+            crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])
 
    crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": -1, "type": np.where(average(-1) > 0, "peak", "nadir")}])])     
    crosses.dropna(inplace=True) #CROSSES MOSTLY VALIDATED, INDEXES SEEM TO BE 1 OFF FROM IGLU AND THERE ARE ALSO A FEW ADDED ROWS
-
+   print(crosses.to_string())
    num_extrema = crosses.shape[0] -  1
    minmax = np.tile(np.nan, num_extrema)
    indexes = pd.Series(np.nan, index=range(num_extrema))
@@ -321,36 +280,11 @@ def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.DataFrame:
    positiondelta = round(timedelta / INTERVAL)
    return df[GLUCOSE].diff(periods=positiondelta) / timedelta
 
-# ------------------------- EVENT-BASED ----------------------------
-
-
-def AUC(df: pd.DataFrame) -> float:
-    return trapezoid(df[GLUCOSE], dx=INTERVAL)
-
-
-def iAUC(df: pd.DataFrame, level: int = 70) -> float:
-    data = df.copy()
-    data[GLUCOSE] = data[GLUCOSE] - level
-    data.loc[data[GLUCOSE] < 0, GLUCOSE] = 0
-    return AUC(data)
-
-
-def baseline(df: pd.DataFrame) -> float:
-    return df[TIME].iloc[0]
-
-
-def peak(df: pd.DataFrame) -> float:
-    return np.max(df[GLUCOSE])
-
-
-def delta(df: pd.DataFrame) -> float:
-    return peak(df) - baseline(df)
-
 """
 Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
 returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
 """
-def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame:
+def create_features(dataset: pd.DataFrame) -> pd.DataFrame:
     df = pd.DataFrame()
 
     for id, data in dataset.groupby("id"):
@@ -395,14 +329,7 @@ def create_features(dataset: pd.DataFrame, events: bool = False) -> pd.DataFrame
         features["CONGA"] = CONGA(data)
         features["MAG"] = MAG(data)
         features["MODD"] = MODD(data)
-        #features["MAGE"] = MAGE(data)
-
-        if events:
-            features["AUC"] = AUC(data)
-            features["iAUC"] = iAUC(data)
-            features["baseline"] = baseline(data)
-            features["peak"] = peak(data)
-            features["delta"] = delta(data)
+        features["MAGE"] = MAGE(data)
 
         df = pd.concat([df, pd.DataFrame.from_records([features])])
 
