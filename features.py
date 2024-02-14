@@ -174,8 +174,6 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    averages["MA_Short"].iloc[:short_ma-1] = averages["MA_Short"].iloc[short_ma-1]
    averages["MA_Long"].iloc[:long_ma-1] = averages["MA_Long"].iloc[long_ma-1]
    averages["DELTA_SL"] = averages["MA_Short"] - averages["MA_Long"]
-
-   # AVERAGES SEEM TO BE VALIDATED
    
    # get crossing points
    glu = lambda i: averages[GLUCOSE].iloc[i]
@@ -193,14 +191,14 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
          if current_average * previous_average < 0:
             type = np.where(current_average < previous_average, "nadir", "peak")
             crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])     
-         elif (not np.isnan(current_average) and (current_average * average(crosses["location"].iloc[-1]) < 0)): # VALIDATE THIS LATER
+         elif (not np.isnan(current_average) and (current_average * average(crosses["location"].iloc[-1]) < 0)):
             prev_delta = average(crosses["location"].iloc[-1])
             type = np.where(current_average < prev_delta, "nadir", "peak")
             crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])
 
-   crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": -1, "type": np.where(average(-1) > 0, "peak", "nadir")}])])     
-   crosses.dropna(inplace=True) #CROSSES MOSTLY VALIDATED, INDEXES SEEM TO BE 1 OFF FROM IGLU AND THERE ARE ALSO A FEW ADDED ROWS
-   print(crosses.to_string())
+   crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": None, "type": np.where(average(-1) > 0, "peak", "nadir")}])])     
+   # CHECK LATER TO MAKE SURE THIS ISNT NECESSARY: crosses.dropna(inplace=True) 
+
    num_extrema = crosses.shape[0] -  1
    minmax = np.tile(np.nan, num_extrema)
    indexes = pd.Series(np.nan, index=range(num_extrema))
@@ -209,13 +207,14 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
       s1 = int(np.where(index == 0, crosses["location"].iloc[index], indexes.iloc[index-1]))
       s2 = crosses["location"].iloc[index+1]
 
-      values = df[GLUCOSE].iloc[s1:s2].dropna().reset_index(drop=True)
+      values = averages[GLUCOSE].loc[s1:s2]
+      print(values)
       if crosses["type"].iloc[index] == "nadir":
          minmax[index] = np.min(values)
-         indexes.iloc[index] = values.idxmin() + s1
+         indexes.iloc[index] = values.idxmin() 
       else:
          minmax[index] = np.max(values)
-         indexes.iloc[index] = values.idxmax() + s1  
+         indexes.iloc[index] = values.idxmax() 
    
    differences = np.transpose(minmax[:, np.newaxis] - minmax) # seems comparable to iglu
    sd = np.std(df[GLUCOSE].dropna())
