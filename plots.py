@@ -3,6 +3,7 @@ import seaborn as sns
 import preprocessing as pp
 import matplotlib.pyplot as plt
 import configparser
+import json
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -62,10 +63,12 @@ def daily_plot(
     if event_data is not None:
       if isinstance(event_data, pd.DataFrame):
          event_types = event_data['type'].unique()
-         colors = plt.cm.get_cmap('nipy_spectral', len(event_types))
-         color_map = {event_type: colors(i) for i, event_type in enumerate(event_types)}
-         for index, row in event_data.iterrows():
-            plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['type']], label=row['type'])
+         with open('event_colors.json') as colors_file:
+            color_dict = json.load(colors_file)
+            colors = list(color_dict.values())
+            color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
+            for index, row in event_data.iterrows():
+               plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['type']], label=row['type'])
       else:
          plt.axvline(pd.to_datetime(event_data[TIME]), color="orange", label=event_data['type'])
 
