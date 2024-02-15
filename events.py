@@ -51,7 +51,7 @@ def episodes_helper(
                edges.pop(index + 1) # this episode does not end within 15 min, so combine this episode with the next
                continue
 
-         description = f"{type}glycemic episode of level {level} occurring from {start_time} to {end_time}"
+         description = f"{start_time} to {end_time} level {level} {type}glycemic episode"
          event = pd.DataFrame.from_records([{"id": id, TIME: start_time, "before": 0, "after": episode_length, 
                                              "type": f"{type} level {level} episode", "description": description}])
          episodes = pd.concat([episodes, event]) 
@@ -140,7 +140,7 @@ def get_excursions(
             if end_index != data.shape[0] - 1:
                end_time = extrema[extrema >= end_time].iloc[0]
             
-            description = f"{type}glycemic excursion occurring from {start_time} to {end_time}"
+            description = f"{start_time} to {end_time} {type}glycemic excursion"
             event = pd.DataFrame.from_records([{"id": id, TIME: timestamp, "before": timegap(timestamp - start_time), 
                                                 "after": timegap(end_time - timestamp), 
                                                 "type": f"{type} excursion", "description": description}])
@@ -188,8 +188,8 @@ def retrieve_event_data(
 
         event_data = pd.concat([event_data, data])
 
-    if event_data.shape[0] != 0:
-      event_data = event_data.set_index(["id"])
+    #if event_data.shape[0] != 0:
+      #event_data = event_data.set_index(["id"])
 
     return event_data
 
@@ -271,20 +271,23 @@ def episode_statistics(
 def AUC(df: pd.DataFrame) -> float:
     return trapezoid(df[GLUCOSE], dx=INTERVAL)
 
-def iAUC(df: pd.DataFrame, level: int = 70) -> float:
+def iAUC(df: pd.DataFrame, level = float, flip=False) -> float:
     data = df.copy()
-    data[GLUCOSE] = data[GLUCOSE] - level
+    data[GLUCOSE] = (data[GLUCOSE] - level) if not flip else (level - data[GLUCOSE])
     data.loc[data[GLUCOSE] < 0, GLUCOSE] = 0
     return AUC(data)
 
 def baseline(df: pd.DataFrame) -> float:
-    return df[TIME].iloc[0]
+    return df[GLUCOSE].iloc[0]
 
 def peak(df: pd.DataFrame) -> float:
     return np.max(df[GLUCOSE])
 
+def nadir(df: pd.DataFrame) -> float:
+   return np.min(df[GLUCOSE])
+
 def delta(df: pd.DataFrame) -> float:
-    return peak(df) - baseline(df)
+    return abs(peak(df) - baseline(df))
 
 def excursion_statistics(
    df: pd.DataFrame,
@@ -295,16 +298,78 @@ def excursion_statistics(
    type: str = "type",
    desc: str = "description"
 ) -> pd.DataFrame:
-   patient = events[events['id'] == id].copy()
-   total_days = (data.iloc[-1][TIME] - data.iloc[0][TIME]).total_seconds() / (3600 * 24)
+   total_days = (df.iloc[-1][TIME] - df.iloc[0][TIME]).total_seconds() / (3600 * 24)
+   mean = df[GLUCOSE].mean()
+   sd = df[GLUCOSE].std()
+   upper = mean + (2 * sd)
+   lower = mean - (2 * sd)
 
-   num_hypo_excursions = patient[patient[type] == "hypo excursion"].shape[0]
-   num_hyper_excursions = patient[patient[type] == "hyper excursion"].shape[0]
+   hypo_excursions = events[events[type] == "hypo excursion"].copy()
+   num_hypo_excursions = hypo_excursions.shape[0]
+   hyper_excursions = events[events[type] == "hyper excursion"].copy()
+   num_hyper_excursions = hyper_excursions.shape[0]
+   hypo_data = retrieve_event_data(df, hypo_excursions)
+   hyper_data = retrieve_event_data(df, hyper_excursions)
+
    hypo_excursions_per_day = num_hypo_excursions / total_days
    hyper_excursions_per_day = num_hyper_excursions / total_days
-   excursions_per_day = hypo_excursions_per_day + hyper_excursions_per_day
 
-   return
+   hypo_mean_duration = np.mean(hypo_excursions[before] + hypo_excursions[after])
+   mean_hypo_iAUC = 0
+   mean_hypo_nadir = 0
+   mean_hypo_delta = 0
+   mean_hypo_upwards = 0
+   mean_hypo_downwards = 0
+   if num_hypo_excursions != 0:
+      for description, hypo_excursion in hypo_data.groupby(desc):
+         mean_hypo_iAUC += iAUC(hypo_excursion, level=lower, flip=True)
+         nadir = np.min(hypo_excursion[GLUCOSE]); mean_hypo_nadir += nadir
+         delta = abs(lower - nadir); mean_hypo_delta += delta
+
+         event = events[events[desc] == description]
+         downwards = delta / event[before]; mean_hypo_downwards += downwards
+         upwards = delta / event[after]; mean_hypo_upwards += upwards
+      mean_hypo_iAUC /= num_hypo_excursions
+      mean_hypo_nadir /= num_hypo_excursions
+      mean_hypo_delta /= num_hypo_excursions
+      mean_hypo_upwards /= num_hypo_excursions
+      mean_hypo_downwards /= num_hypo_excursions
+
+   hyper_mean_duration = np.mean(hyper_excursions[before] + hyper_excursions[after])
+   mean_hyper_iAUC = 0
+   mean_hyper_peak = 0
+   mean_hyper_delta = 0
+   mean_hyper_upwards = 0
+   mean_hyper_downwards = 0
+   if num_hyper_excursions != 0:
+      for description, hyper_excursion in hyper_data.groupby(desc):
+         mean_hyper_iAUC += iAUC(hyper_excursion, level=upper)
+         peak = np.max(hyper_excursion[GLUCOSE]); mean_hyper_peak += peak
+         delta = abs(peak - upper); mean_hyper_delta += delta
+
+         event = events[events[desc] == description]
+         downwards = delta / event[after]; mean_hyper_downwards += downwards
+         upwards = delta / event[before]; mean_hyper_upwards += upwards
+      mean_hyper_iAUC /= num_hyper_excursions
+      mean_hyper_peak /= num_hyper_excursions
+      mean_hyper_delta /= num_hyper_excursions
+      mean_hyper_upwards /= num_hyper_excursions
+      mean_hyper_downwards /= num_hyper_excursions
+
+   return pd.DataFrame.from_records([{"mean hypoglycemic excursions per day": hypo_excursions_per_day,
+                                      "mean hyperglycemic excursions per day": hyper_excursions_per_day,
+                                      "mean hypoglycemic excursion duration": hypo_mean_duration,
+                                      "mean hyperglycemic excursion duration": hyper_mean_duration,
+                                      "mean hypoglycemic excursion incremental area above curve (iAAC)": mean_hypo_iAUC,
+                                      "mean hyperglycemic excursion incremental area under curve (iAUC)": mean_hyper_iAUC,
+                                      "mean hypoglycemic excursion minimum": mean_hypo_nadir,
+                                      "mean hyperglycemic excursion maximum": mean_hyper_peak,
+                                      "mean hypoglycemic excursion amplitude": mean_hypo_delta,
+                                      "mean hyperglycemic excursion amplitude": mean_hyper_delta,
+                                      "mean hypoglycemic excursion downwards slope (mg/dL per min)": mean_hypo_downwards,
+                                      "mean hyperglycemic excursion downwards slope (mg/dL per min)": mean_hyper_downwards,
+                                      "mean hypoglycemic excursion upwards slope (mg/dL per min)": mean_hypo_upwards,
+                                      "mean hyperglycemic excursion upwards slope (mg/dL per min)": mean_hyper_upwards}])
 
 def event_statistics(
    df: pd.DataFrame,
@@ -319,7 +384,9 @@ def event_statistics(
 
    for id, data in df.groupby('id'):
       patient = events[events['id'] == id]
-      stats = pd.concat([pd.DataFrame.from_records([{'id': id}]), episode_statistics(data, patient, id)], axis=1)
+      stats = pd.concat([pd.DataFrame.from_records([{'id': id}]), 
+                         episode_statistics(data, patient, id),
+                         excursion_statistics(data, patient, id)], axis=1)
       statistics = pd.concat([statistics, stats])
    
    statistics.set_index('id', inplace=True)
