@@ -59,22 +59,26 @@ def daily_plot(
     plot.fig.suptitle(f"Glucose (mg/dL) vs. Timestamp for {id}")
 
     # plotting vertical lines to represent the events
-    event_data = events.set_index("id").loc[id] if events is not None else None
-    if event_data is not None:
-      if isinstance(event_data, pd.DataFrame):
-         event_types = event_data['type'].unique()
-         with open('event_colors.json') as colors_file:
-            color_dict = json.load(colors_file)
-            colors = list(color_dict.values())
-            color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
-            for index, row in event_data.iterrows():
-               plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['type']], label=row['type'])
-      else:
-         plt.axvline(pd.to_datetime(event_data[TIME]), color="orange", label=event_data['type'])
+    if events is not None:
+      if isinstance(events, pd.DataFrame):
+         event_data = events[events["id"] == id] if events is not None else None
+         if event_data is not None:
+            event_types = event_data['type'].unique()
+            with open('event_colors.json') as colors_file:
+               color_dict = json.load(colors_file)
+               colors = list(color_dict.values())
+               color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
+               for index, row in event_data.iterrows():
+                  plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['type']], label=row['type'])
+      elif events["id"] == id:
+         plt.axvline(pd.to_datetime(events[TIME]), color="orange", label=events['type'])
 
     plt.legend(loc='right', bbox_to_anchor=(1.0,1.05))
     plt.ylim(35, 405)
     plt.show() if not save else plot.savefig("./plots/" + str(id) + "Daily.png")
+
+def event_plot(df: pd.DataFrame, events: pd.DataFrame):
+    return
 
 def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, save: bool = False):
     """
