@@ -4,6 +4,7 @@ import preprocessing as pp
 import matplotlib.pyplot as plt
 import configparser
 import json
+from events import retrieve_event_data
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -77,8 +78,31 @@ def daily_plot(
     plt.ylim(35, 405)
     plt.show() if not save else plot.savefig("./plots/" + str(id) + "Daily.png")
 
-def event_plot(df: pd.DataFrame, events: pd.DataFrame):
-    return
+def event_plot_all(df: pd.DataFrame, events: pd.DataFrame):
+    sns.set_theme()
+    event_data = retrieve_event_data(df, events)
+    event_data.set_index('description', inplace=True)
+    for desc, data in event_data.groupby('description'):
+        event = events[events["description"] == desc]
+        event_plot(data, event)
+
+def event_plot(event_data: pd.DataFrame, event: pd.Series):
+    pd.set_option('display.max_colwidth', None)
+    plot = sns.relplot(
+        data=event_data,
+        kind="line",
+        x=TIME,
+        y=GLUCOSE,
+    )
+    plot.fig.subplots_adjust(top=0.9)
+    plot.fig.suptitle(event['description'])
+
+    # vertical line to represent the event start
+    plt.axvline(pd.to_datetime(event[TIME]), color="orange", label=event['type'])
+
+    plt.legend(loc='right', bbox_to_anchor=(1.0,1.05))
+    plt.ylim(35, 405)
+    plt.show()
 
 def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, save: bool = False):
     """
