@@ -73,8 +73,15 @@ def daily_plot(
                   plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['type']], label=row['type'])
       elif events["id"] == id:
          plt.axvline(pd.to_datetime(events[TIME]), color="orange", label=events['type'])
+    
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys(), bbox_to_anchor=(1.35, 0.5), loc='center right')
+    plt.tight_layout()
 
-    plt.legend(loc='right', bbox_to_anchor=(1.0,1.05))
+    for ax in plot.axes.flat:
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
+
     plt.ylim(35, 405)
     plt.show() if not save else plot.savefig("./plots/" + str(id) + "Daily.png")
 
@@ -97,8 +104,11 @@ def event_plot(event_data: pd.DataFrame, event: pd.Series):
     plot.fig.subplots_adjust(top=0.9)
     plot.fig.suptitle(event['description'])
 
-    # vertical line to represent the event start
-    plt.axvline(pd.to_datetime(event[TIME]), color="orange", label=event['type'])
+    not_supported_event_types = ['hypo level 1 episode', 'hypo level 2 episode',
+                                 'hyper level 1 episode', 'hyper level 2 episode',
+                                 'hypo excursion', 'hyper excursion']
+    if event['Type'] not in not_supported_event_types:
+      plt.axvline(pd.to_datetime(event[TIME]), color="orange", label=event['Type'])
 
     plt.legend(loc='right', bbox_to_anchor=(1.0,1.05))
     plt.ylim(35, 405)
