@@ -158,7 +158,32 @@ def MAG(df: pd.DataFrame) -> float:
    data = df[(df[TIME].dt.minute == (df[TIME].dt.minute).iloc[0]) & (df[TIME].dt.second == (df[TIME].dt.second).iloc[0])][GLUCOSE]
    return np.sum(data.diff().abs()) / data.size
 
-def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
+def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 180) -> float:
+   data = df.reset_index(drop=True)
+   missing = data[GLUCOSE].isnull()
+
+   # create groups of consecutive missing values
+   groups = missing.ne(missing.shift()).cumsum()
+
+   # group by the created groups and count the size of each group, then apply it where values are missing
+   size_of_groups = data.groupby([groups, missing])[GLUCOSE].transform('size').where(missing, 0)
+
+   # filter groups where size is greater than 0 and take their indexes
+   indexes = size_of_groups[size_of_groups.diff() > (max_gap / INTERVAL)].index.tolist()
+
+   if not indexes:
+      return MAGE_helper(df, short_ma, long_ma)
+   else:
+      indexes.insert(0, 0); indexes.append(None)
+      mage = 0
+      for i in range(len(indexes) - 1):
+         segment = data.iloc[indexes[i]:indexes[i+1]]
+         length = segment.shape[0]
+         segment = segment.loc[segment[GLUCOSE].first_valid_index():].reset_index(drop=True)
+         mage += (length / data.shape[0]) * MAGE_helper(segment, short_ma, long_ma)
+      return mage
+
+def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    averages = pd.DataFrame()
    averages[GLUCOSE] = df[GLUCOSE]
    averages.reset_index(drop=True, inplace=True)
@@ -166,9 +191,6 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    # calculate rolling means, iglu does right align instead of center
    averages["MA_Short"] = averages[GLUCOSE].rolling(window=short_ma, min_periods=1).mean()
    averages["MA_Long"] = averages[GLUCOSE].rolling(window=long_ma, min_periods=1).mean()
-
-   averages = averages.loc[averages[GLUCOSE].first_valid_index():averages[GLUCOSE].last_valid_index()]
-   averages.reset_index(drop=True, inplace=True)
 
    # fill in leading NaNs due to moving average calculation
    averages["MA_Short"].iloc[:short_ma-1] = averages["MA_Short"].iloc[short_ma-1]
@@ -208,7 +230,6 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
       s2 = crosses["location"].iloc[index+1]
 
       values = averages[GLUCOSE].loc[s1:s2]
-      print(values)
       if crosses["type"].iloc[index] == "nadir":
          minmax[index] = np.min(values)
          indexes.iloc[index] = values.idxmin() 
@@ -216,7 +237,7 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
          minmax[index] = np.max(values)
          indexes.iloc[index] = values.idxmax() 
    
-   differences = np.transpose(minmax[:, np.newaxis] - minmax) # seems comparable to iglu
+   differences = np.transpose(minmax[:, np.newaxis] - minmax)
    sd = np.std(df[GLUCOSE].dropna())
    N = len(minmax)
 
@@ -246,12 +267,12 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
          j += 1
    
    # MAGE-
-   mage_minus_heights = pd.Series() # seems validated
-   mage_minus_tp_pairs = {} # almost identical, slightly different near the end
+   mage_minus_heights = pd.Series() 
+   mage_minus_tp_pairs = {} 
    j = 0; prev_j = 0
    while j < N:
       delta = differences[prev_j:j+1,j]
-      min_v = np.min(delta) # seems validated
+      min_v = np.min(delta) 
       i = np.argmin(delta) + prev_j
 
       if min_v <= (-1 * sd):
