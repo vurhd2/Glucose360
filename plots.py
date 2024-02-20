@@ -56,23 +56,24 @@ def daily_plot(
         y=GLUCOSE,
         col="Day Chunking" if chunk_day else None,
     )
-    plot.fig.subplots_adjust(top=0.9)
-    plot.fig.suptitle(f"Glucose (mg/dL) vs. Timestamp for {id}")
+    plot.figure.subplots_adjust(top=0.9)
+    plot.figure.suptitle(f"Glucose (mg/dL) vs. Timestamp for {id}")
+    plot.figure.set_size_inches(10, 6)
 
     # plotting vertical lines to represent the events
     if events is not None:
       if isinstance(events, pd.DataFrame):
          event_data = events[events["id"] == id] if events is not None else None
          if event_data is not None:
-            event_types = event_data['type'].unique()
+            event_types = event_data['Type'].unique()
             with open('event_colors.json') as colors_file:
                color_dict = json.load(colors_file)
                colors = list(color_dict.values())
                color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
                for index, row in event_data.iterrows():
-                  plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['type']], label=row['type'])
+                  plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['Type']], label=row['Type'])
       elif events["id"] == id:
-         plt.axvline(pd.to_datetime(events[TIME]), color="orange", label=events['type'])
+         plt.axvline(pd.to_datetime(events[TIME]), color="orange", label=events['Type'])
     
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
@@ -88,9 +89,9 @@ def daily_plot(
 def event_plot_all(df: pd.DataFrame, events: pd.DataFrame):
     sns.set_theme()
     event_data = retrieve_event_data(df, events)
-    event_data.set_index('description', inplace=True)
-    for desc, data in event_data.groupby('description'):
-        event = events[events["description"] == desc]
+    event_data.set_index('Description', inplace=True)
+    for desc, data in event_data.groupby('Description'):
+        event = events[events["Description"] == desc]
         event_plot(data, event)
 
 def event_plot(event_data: pd.DataFrame, event: pd.Series):
@@ -101,14 +102,16 @@ def event_plot(event_data: pd.DataFrame, event: pd.Series):
         x=TIME,
         y=GLUCOSE,
     )
-    plot.fig.subplots_adjust(top=0.9)
-    plot.fig.suptitle(event['description'])
+    plot.figure.subplots_adjust(top=0.9)
+    plot.figure.suptitle(event['Description'].iloc[0])
+    plot.figure.set_size_inches(10, 6)
 
     not_supported_event_types = ['hypo level 1 episode', 'hypo level 2 episode',
                                  'hyper level 1 episode', 'hyper level 2 episode',
                                  'hypo excursion', 'hyper excursion']
-    if event['Type'] not in not_supported_event_types:
-      plt.axvline(pd.to_datetime(event[TIME]), color="orange", label=event['Type'])
+
+    if not (event['Type'].iloc[0] in not_supported_event_types):
+      plt.axvline(pd.to_datetime(event[TIME].iloc[0]), color="orange", label=event['Type'].iloc[0])
 
     plt.legend(loc='right', bbox_to_anchor=(1.0,1.05))
     plt.ylim(35, 405)
