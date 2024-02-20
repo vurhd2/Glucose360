@@ -160,28 +160,27 @@ def MAG(df: pd.DataFrame) -> float:
 
 def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 180) -> float:
    data = df.reset_index(drop=True)
-   missing = data[GLUCOSE].isnull()
 
+   missing = data[GLUCOSE].isnull()
    # create groups of consecutive missing values
    groups = missing.ne(missing.shift()).cumsum()
-
    # group by the created groups and count the size of each group, then apply it where values are missing
    size_of_groups = data.groupby([groups, missing])[GLUCOSE].transform('size').where(missing, 0)
-
    # filter groups where size is greater than 0 and take their indexes
    indexes = size_of_groups[size_of_groups.diff() > (max_gap / INTERVAL)].index.tolist()
 
-   if not indexes:
+   if not indexes: # no gaps in data larger than max_gap
       return MAGE_helper(df, short_ma, long_ma)
-   else:
+   else: # calculate MAGE per segment and add them together (weighted)
       indexes.insert(0, 0); indexes.append(None)
       mage = 0
+      total_duration = 0
       for i in range(len(indexes) - 1):
          segment = data.iloc[indexes[i]:indexes[i+1]]
-         length = segment.shape[0]
          segment = segment.loc[segment[GLUCOSE].first_valid_index():].reset_index(drop=True)
-         mage += (length / data.shape[0]) * MAGE_helper(segment, short_ma, long_ma)
-      return mage
+         segment_duration = (segment.iloc[-1][TIME] - segment.iloc[0][TIME]).total_seconds(); total_duration += segment_duration
+         mage +=  segment_duration * MAGE_helper(segment, short_ma, long_ma)
+      return mage / total_duration
 
 def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    averages = pd.DataFrame()
