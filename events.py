@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from scipy.integrate import trapezoid
 import configparser
+import glob, os
 import math
 
 config = configparser.ConfigParser()
@@ -15,6 +16,68 @@ AFTER = "After"
 TYPE = "Type"
 DESCRIPTION = "Description"
 
+def import_events(
+   path: str, 
+   id: str,
+   day_col: str = "Day",
+   time_col: str = "Time",
+   before: int = 60,
+   after: int = 60,
+   type: str = "imported event"
+):
+   """
+   Bulk imports events from .csv files within the given directory
+   @param path       the path of the directory to import from
+   @param id         the ID of the patient that the imported events belong to
+   @param day_col    the name of the column specifying the day the event occurred (year, month, and specific day)
+   @param time_col   the name of the column specifying what time during the day the event occurred
+   @param before     the amount of minutes to also look at before the event timestamp
+   @param after      the amount of minutes to also look at after the event timestamp
+   @param type       the type of event all the imported events are
+   """
+   if not os.path.isdir(path):
+      raise ValueError("Directory does not exist")
+
+   csv_files = glob.glob(path + "/*.csv")
+
+   if len(csv_files) == 0:
+      raise Exception("No .csv files found when importing events.")
+
+   events = pd.concat(import_events_helper(file, day_col, time_col, before, after, type) for file in csv_files)
+   events.insert(0, 'id', id)
+   events[DESCRIPTION] = "imported event #" + (events.index + 1).astype(str)
+
+   print(f"{len(csv_files)} .csv files were found in the specified directory.")
+
+   return events
+
+def import_events_helper(
+   path: str, 
+   day_col: str = "Day",
+   time_col: str = "Time",
+   before: int = 60,
+   after: int = 60,
+   type: str = "imported event"
+):
+   """
+   Imports events from a single given .csv file
+   @param path       the path of the .csv file to import from
+   @param id         the ID of the patient that the imported events belong to
+   @param day_col    the name of the column specifying the day the event occurred (year, month, and specific day)
+   @param time_col   the name of the column specifying what time during the day the event occurred
+   @param before     the amount of minutes to also look at before the event timestamp
+   @param after      the amount of minutes to also look at after the event timestamp
+   @param type       the type of event all the imported events are
+   """
+   df = pd.read_csv(path)
+
+   events = pd.DataFrame()
+   events[TIME] = pd.to_datetime(df[day_col] + " " + df[time_col])
+   events[BEFORE] = before
+   events[AFTER] = after
+   events[TYPE] = type
+
+   return events.dropna(subset=[TIME])
 
 def episodes_helper(
    df: pd.DataFrame, 
@@ -156,6 +219,22 @@ def get_excursions(
 
    return excursions
 
+def backwards_ROC(df: pd.DataFrame) -> pd.Series:
+   data = df.copy().reset_index(drop=True).set_index(TIME)
+   return ((3 * data[GLUCOSE]) - (4 * data[GLUCOSE].shift()) + data[GLUCOSE].shift(2)) / (2 * INTERVAL)
+
+def get_meals(df: pd.DataFrame, threshold: float, cooldown: int = 20) -> pd.DataFrame:
+   meals = pd.DataFrame()
+   for id, data in df.groupby('id'):
+      roc = backwards_ROC(data)
+      meal_times = roc[roc >= threshold].index.tolist()
+      for time in meal_times:
+         if meals.shape[0] == 0 or ((time - meals[TIME].iloc[-1]) >= pd.Timedelta(minutes = cooldown)):
+            meal = pd.DataFrame.from_records([{"id": id, TIME: time, BEFORE: 0, AFTER: 0, 
+                                                      TYPE: "meal", DESCRIPTION: f"meal occurring at {time}"}])
+            meals = pd.concat([meals, meal])
+   return meals
+
 def get_curated_events(df: pd.DataFrame) -> pd.DataFrame:
    return pd.concat([get_episodes(df), get_excursions(df)])
 
@@ -213,10 +292,10 @@ def episode_statistics(
    id: str,
 ) -> pd.DataFrame:
    "Calculates episode-specific metrics on the given DataFrame (helper function)"
-   hypo_lvl1 = events[events[type] == "hypo level 1 episode"]
-   hypo_lvl2 = events[events[type] == "hypo level 2 episode"]
-   hyper_lvl1 = events[events[type] == "hyper level 1 episode"]
-   hyper_lvl2 = events[events[type] == "hyper level 2 episode"]
+   hypo_lvl1 = events[events[TYPE] == "hypo level 1 episode"]
+   hypo_lvl2 = events[events[TYPE] == "hypo level 2 episode"]
+   hyper_lvl1 = events[events[TYPE] == "hyper level 1 episode"]
+   hyper_lvl2 = events[events[TYPE] == "hyper level 2 episode"]
 
    total_days = (df.iloc[-1][TIME] - df.iloc[0][TIME]).total_seconds() / (3600 * 24)
 
