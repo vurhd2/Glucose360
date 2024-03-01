@@ -1,19 +1,19 @@
-import os
-import glob
+import os, glob
 import pandas as pd
 import numpy as np
 import configparser
+import zipfile, tempfile
 
 # globals for glucose values to replace "Low" and "High" with in the CGM data
 LOW = 40
 HIGH = 400
 
-def import_directory(
-    path: str,
-    glucose: str = "Glucose Value (mg/dL)",
-    time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
-    interval: int = 5,
-    max_gap: int = 45,
+def import_data(
+   path: str,
+   glucose: str = "Glucose Value (mg/dL)",
+   time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
+   interval: int = 5,
+   max_gap: int = 45,
 ) -> pd.DataFrame:
     """
     Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
@@ -21,9 +21,6 @@ def import_directory(
     @param path    the path of the directory to be parsed through
     @param glucose_col   the header of the column containing the glucose values
     """
-    if not os.path.isdir(path):
-        raise ValueError("Directory does not exist")
-
     global glucose_name
     glucose_name = glucose
 
@@ -39,16 +36,62 @@ def import_directory(
     with open('config.ini', 'w') as configfile:
       config.write(configfile)
 
+    ext = os.path.splitext(path)[1]
+
+    # path leads to directory
+    if ext == "":
+       if not os.path.isdir(path):
+          raise ValueError("Directory does not exist")
+       else:
+          return import_directory(path, interval, max_gap)
+    
+    # check if path leads to .zip or .csv
+    if ext.lower() in [".csv", ".zip"]:
+       if not os.path.isfile(path):
+          raise ValueError("File does not exist")
+    else:
+       raise ValueError("Invalid file type")
+   
+    # path leads to .csv
+    if ext.lower() == ".csv":
+       df = import_csv(path, interval, max_gap)
+       print("Given .CSV file has been preprocessed.")
+       return df.set_index("id")
+
+    # otherwise has to be a .zip file
+    with zipfile.ZipFile(path, 'r') as zip_ref:
+      # create a temporary directory to pull from
+      with tempfile.TemporaryDirectory() as temp_dir:
+         zip_ref.extractall(temp_dir)
+         dir = path.split("/")[-1].split(".")[0]
+         print(temp_dir + "/" + dir)
+         return import_directory((temp_dir + "/" + dir), interval, max_gap)
+    
+
+def import_directory(
+    path: str,
+    interval: int = 5,
+    max_gap: int = 45,
+) -> pd.DataFrame:
+    """
+    Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
+    The DataFrame holds columns for DateTime and Glucose Value, and is indexed by 'id'
+    @param path    the path of the directory to be parsed through
+    @param glucose_col   the header of the column containing the glucose values
+    """
     csv_files = glob.glob(path + "/*.csv")
 
-    data = pd.concat(import_data(file, interval, max_gap) for file in csv_files)
+    if len(csv_files) == 0:
+       raise Exception("No CSV files found.")
+
+    data = pd.concat(import_csv(file, interval, max_gap) for file in csv_files)
     data = data.set_index(["id"])
 
     print(f"{len(csv_files)} .csv files were found in the specified directory.")
 
     return data
 
-def import_data(path: str, interval: int = 5, max_gap = int) -> pd.DataFrame:
+def import_csv(path: str, interval: int = 5, max_gap = int) -> pd.DataFrame:
     """
     Returns a pre-processed Pandas DataFrame containing the timestamp and glucose data for the csv file at the given path.
     The DataFrame returned has three columns, the DateTime, Glucose Value, and 'id' of the patient
@@ -70,13 +113,13 @@ def import_data(path: str, interval: int = 5, max_gap = int) -> pd.DataFrame:
 
     df = df[[time_name, glucose_name]].copy()
     df = resample_data(df, interval, max_gap)
-    df = df.dropna(subset=[glucose_name])
+    df = df.loc[df[glucose_name].first_valid_index():df[glucose_name].last_valid_index()]
     df = chunk_day(chunk_time(df))
     df["id"] = id
 
     return df
 
-def resample_data(df: pd.DataFrame, minutes: int = 5, max_gap = int) -> pd.DataFrame:
+def resample_data(df: pd.DataFrame, minutes: int = 5, max_gap: int = 45) -> pd.DataFrame:
     """
     Resamples and (if needed) interpolates the given default-indexed DataFrame.
     Used mostly to preprocess the data in the csv files being imported in import_data().
