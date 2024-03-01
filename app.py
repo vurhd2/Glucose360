@@ -1,4 +1,4 @@
-from preprocessing import import_directory, resample_data
+from preprocessing import import_data, resample_data
 from events import *
 from plots import *
 from features import create_features
@@ -10,6 +10,7 @@ import plotly.express as px
 import plotly.graph_objs as go
 
 from shiny import App, ui, render, reactive
+from shiny.types import FileInfo
 from shinywidgets import output_widget, render_widget
 
 #app = Dash(__name__)
@@ -17,188 +18,166 @@ from shinywidgets import output_widget, render_widget
 TIME = "Timestamp (YYYY-MM-DDThh:mm:ss)"
 GLUCOSE = "Glucose Value (mg/dL)"
 
-df = import_directory("datasets")
-#features = create_features(df).T.reset_index(names=['Metric'])
+#df = import_data("datasets")
+#events = get_curated_events(df)
+#events[TIME] = pd.to_datetime(events[TIME])
 
 # ------------------- SHINY -----------------------
 app_ui = ui.page_fluid(
    ui.navset_pill(
       ui.nav_panel(
          "Features",
-         ui.input_file("file", "Import Dexcom CGM Data (.zip file)", accept=[".zip"], multiple=False),
-         ui.output_data_frame("features_table")
+         ui.input_file("data_import", "Import Dexcom CGM Data (.zip file)", accept=[".zip", ".csv"], multiple=False),
+         ui.card(ui.output_data_frame("features_table"))
       ),
       ui.nav_panel(
          "Plots",
-         ui.input_select("select_patient_plot", "Select Patient:", df.index.unique().tolist()),
-         ui.input_select("select_plot", "Select Plot:", ["Daily (Time-series)", "Spaghetti", "AGP"]),
-         output_widget("plot"),
-         ui.output_text_verbatim("plot_hover_x"),
-         ui.output_text_verbatim("plot_hover_y")
+         ui.layout_columns(
+            ui.output_ui("patient_plot"),
+            ui.input_select("select_plot", "Select Plot:", ["Daily (Time-series)", "Spaghetti", "AGP"]),
+            ui.output_ui("plot_settings")
+         ),
+         ui.card(
+            output_widget("plot"),
+            ui.output_plot("agp_plot")
+         )
       ),
-      ui.nav_panel("Events"),
+      ui.nav_panel(
+         "Events",
+         ui.output_ui("patient_event"),
+         ui.layout_columns(
+            ui.card(ui.input_file("event_import", "Import Events (.zip file)", accept=[".zip", ".csv"], multiple=False)),
+            ui.card(ui.output_data_frame("event_metrics_table")),
+         ),
+         ui.layout_columns(
+            ui.card(
+               ui.input_switch("show_events", "Show Events", value=True),
+               ui.input_switch("show_excursions", "Show Excursions", value=True),
+               ui.output_data_frame("events_table")
+            ),
+            ui.card(output_widget("event_plot"))
+         ),
+      ),
       id="tab"
    )
 )
 
 def server(input, output, session):
-   @render_widget
-   def plot():
-      def daily(data):
-         #fig = px.line(data, x=TIME, y=GLUCOSE, title=f"Daily (Time-Series) for {id}")
-         subplot_figs = []
-         data["Day"] = data[TIME].dt.date
-         for day, dataset in data.groupby("Day"):
-            subplot_figs.append(
-               go.Scatter(
-                     x=dataset[TIME],
-                     y=dataset[GLUCOSE],
-                     mode='lines+markers',
-                     name=str(day)
-               )
+   @reactive.Calc
+   def df():
+      file: list[FileInfo] | None = input.data_import()
+      if file is None:
+         return pd.DataFrame()
+      print(file[0]["datapath"]) # /var/folders/bw/0rhyvszj0tjfkmy61rv7lg_w0000gn/T/fileupload-3sfa72lh/tmpyu6zs96y/0.zip
+      return import_data(file[0]["datapath"], name=file[0]["name"].split(".")[0])
+   
+   @reactive.Calc
+   def get_events():
+      return get_curated_events(df())
+
+   def daily(data, x_range: list = None):
+      subplot_figs = []
+      data["Day"] = data[TIME].dt.date
+      for day, dataset in data.groupby("Day"):
+         subplot_figs.append(
+            go.Scatter(
+                  x=dataset[TIME],
+                  y=dataset[GLUCOSE],
+                  mode='lines+markers',
+                  name=str(day)
             )
-         #return {'data': subplot_figs, 'layout': go.Layout(title='Dynamic Subplots')}
-         #layout = go.Layout(title='Daily (Time-Series)', xaxis=dict(title='Time'), yaxis=dict(title='Glucose'))
-         return go.Figure(data=subplot_figs, layout=go.Layout(title='Daily (Time-Series) Plot'))
-      
-      def spaghetti(data):
-         data["Day"] = data[TIME].dt.date
-         times = data[TIME] - data[TIME].dt.normalize()
-         data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
-         data.sort_values(by=[TIME], inplace=True)
-         return px.line(data, x="Time", y=GLUCOSE, color="Day")
-      
+         )
+      fig = go.Figure(data=subplot_figs, layout=go.Layout(title='Daily (Time-Series) Plot'))
+
+      if x_range or input.daily_events_switch():
+         id = input.select_patient_plot()
+         events = get_events()
+         if isinstance(events, pd.DataFrame):
+            event_data = events[events["id"] == id] if events is not None else None
+            if event_data is not None:
+               event_types = event_data['Type'].unique()
+               with open('event_colors.json') as colors_file:
+                  color_dict = json.load(colors_file)
+                  colors = list(color_dict.values())
+                  color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
+                  for index, row in event_data.iterrows():
+                     fig.add_vline(x=pd.to_datetime(row[TIME]), line_dash="dash", line_color=color_map[row['Type']])
+                     fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], showarrow=False)
+         elif events["id"] == id:
+            fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
+            fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
+      if x_range is not None: fig.update_xaxes(type="date", range=x_range)
+      return fig
+
+   @render.ui
+   def patient_plot():
+      return ui.input_select("select_patient_plot", "Select Patient:", df().index.unique().tolist())
+   
+   @render.ui
+   def patient_event():
+      return ui.input_select("select_patient_event", "Select Patient:", df().index.unique().tolist())
+
+   @render.ui
+   def plot_settings():
       plot_type = input.select_plot()
       if plot_type == "Daily (Time-series)":
-         return daily(df.loc[input.select_patient_plot()])
+         events_on = input.daily_events_switch() if "daily_events_switch" in input else False
+         return ui.input_switch("daily_events_switch", "Show Events", value=events_on)
       elif plot_type == "Spaghetti":
-         return spaghetti(df.loc[input.select_patient_plot()])
-      else:
-         return AGP_plot(df, input.select_patient_plot())
+         chunk_day = input.spaghetti_chunk_switch() if "spaghetti_chunk_switch" in input else False
+         return ui.input_switch("daily_events_switch", "Chunk Weekend/Weekday", value=chunk_day)
 
-   @render.text
-   def plot_hover_x():
-      return f"Timestamp: {input.plot_hover()['x']}"
+   @render_widget
+   def plot():
+      plot_type = input.select_plot()
+      if plot_type != "AGP":
+         def spaghetti(data):
+            data["Day"] = data[TIME].dt.date
+            times = data[TIME] - data[TIME].dt.normalize()
+            data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
+            data.sort_values(by=[TIME], inplace=True)
+            return px.line(data, x="Time", y=GLUCOSE, color="Day")
+         
+         plot_type = input.select_plot()
+         if plot_type == "Daily (Time-series)":
+            return daily(df().loc[input.select_patient_plot()])
+         elif plot_type == "Spaghetti":
+            return spaghetti(df().loc[input.select_patient_plot()])
    
-   @render.text
-   def plot_hover_y():
-      return f"Glucose Value: {input.plot_hover()['y']}"
+   @render.plot
+   def agp_plot():
+      plot_type = input.select_plot()
+      if plot_type == "AGP":
+         return AGP_plot(df(), input.select_patient_plot())
    
    @render.data_frame
    def features_table():
-      return render.DataTable(create_features(df).reset_index(names=["Patient"]))
+      return render.DataGrid(create_features(df()).reset_index(names=["Patient"]))
+   
+   @render.data_frame
+   def events_table():
+      events = get_events()
+      data = events[events["id"] == input.select_patient_event()].copy()
+      data.drop(columns=["id"], inplace=True)
+      data[TIME] = data[TIME].astype(str)
+
+      if not input.show_events():
+         data = data[data["Type"] ]
+
+      return render.DataGrid(data, row_selection_mode="single")
+   
+   @render.data_frame
+   def event_metrics_table():
+      events = get_events()
+      event = events[events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
+      return render.DataGrid(event_metrics(df(), event.squeeze()))
+
+   @render_widget
+   def event_plot():
+      events = get_events()
+      event = events[events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
+      before = event[TIME].iloc[0] - pd.Timedelta(minutes=event[BEFORE].iloc[0])
+      after = event[TIME].iloc[0] + pd.Timedelta(minutes=event[AFTER].iloc[0])
+      return daily(df().loc[input.select_patient_event()], x_range=[before, after])
 
 app = App(app_ui, server, debug=True)
-
-"""
-with ui.navset_pill(id="tab"):
-   with ui.nav_panel("Features"):
-      ui.div
-      "hub"
-
-   with ui.nav_panel("Plots"):
-      ui.input_select("select_patient_plot", "Select Patient:", df.index.unique().tolist())
-      ui.input_select("select_plot", "Select Plot:", ["Daily (Time-series)", "Spaghetti", "AGP"])
-
-      @render.plot
-      def plot():
-         plot_type = input.select_plot()
-         plot = sns.relplot(data=df.loc[input.select_patient_plot()],kind="line",x=TIME, y=GLUCOSE)
-
-   with ui.nav_panel("Events"):
-      "hub"
-
-@render.plot
-def plot():
-   plot_type = input.select_plot()
-   daily_plot(df, input.select_patient_plot())
-"""
-
-"""
-# ------------------------ DASH ------------------------
-app.layout = html.Div([
-   dcc.Tabs([
-      dcc.Tab(label='Features', children=[
-         dash_table.DataTable(
-            data=features.to_dict('records'),
-            columns=[{"name": i, "id": i} for i in features.columns]
-         )
-      ]),
-      dcc.Tab(label='Plots', children=[
-         dcc.Dropdown(df.index.unique().tolist(), id='plot-id-dropdown'),
-         dcc.Dropdown(['Daily (Time-series)', 'Spaghetti', 'AGP'], 'Daily (Time-series)', id='plot-dropdown'),
-         html.Div(id='plot')
-      ]),
-      dcc.Tab(label='Events', children=[
-
-      ])
-   ])
-])
-
-@callback (Output("plot", "children"),
-           Input("plot-id-dropdown", "value"),
-           Input("plot-dropdown", "value"))
-def render_plot(id, plot_type):
-   data = df.loc[id].copy()
-
-   #fig = px.line(data, x=TIME, y=GLUCOSE, title=f"Daily (Time-Series) for {id}")
-   subplot_figs = []
-   data["Day"] = data[TIME].dt.date
-   for day, dataset in data.groupby("Day"):
-      subplot_figs.append(
-         go.Scatter(
-               x=dataset[TIME],
-               y=dataset[GLUCOSE],
-               mode='lines+markers',
-               name=str(day)
-         )
-      )
-
-   fig = {'data': subplot_figs, 'layout': go.Layout(title='Dynamic Subplots')}
-
-   if plot_type == "Spaghetti":
-      data["Day"] = data[TIME].dt.date
-      times = data[TIME] - data[TIME].dt.normalize()
-      data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
-      data.sort_values(by=[TIME], inplace=True)
-      fig = px.line(data, x="Time", y=GLUCOSE, color="Day")
-   elif plot_type == "AGP":
-      data.reset_index(inplace=True)
-      data[[TIME, GLUCOSE]] = resample_data(data[[TIME, GLUCOSE]])
-      times = data[TIME] - data[TIME].dt.normalize()
-      # need to be in a DateTime format so seaborn can tell how to scale the x axis labels below
-      data["Time"] = (
-         pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times
-      )
-
-      data.set_index("Time", inplace=True)
-
-      agp_data = pd.DataFrame()
-      for time, measurements in data.groupby("Time"):
-         metrics = {
-               "Time": time,
-               "5th": measurements[GLUCOSE].quantile(0.05),
-               "25th": measurements[GLUCOSE].quantile(0.25),
-               "Median": measurements[GLUCOSE].median(),
-               "75th": measurements[GLUCOSE].quantile(0.75),
-               "95th": measurements[GLUCOSE].quantile(0.95),
-         }
-         agp_data = pd.concat([agp_data, pd.DataFrame.from_records([metrics])])
-
-      agp_data = pd.melt(
-         agp_data,
-         id_vars=["Time"],
-         value_vars=["5th", "25th", "Median", "75th", "95th"],
-         var_name="Metric",
-         value_name=GLUCOSE,
-      )
-      agp_data.sort_values(by=["Time"], inplace=True)
-
-      fig = px.line(agp_data, x="Time", y=GLUCOSE, color="Metric")
-
-   return dcc.Graph(figure=fig)
-
-
-if __name__ == "__main__":
-   app.run(debug=True)
-"""
