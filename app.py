@@ -3,10 +3,9 @@ from events import *
 from plots import *
 from features import create_features
 import pandas as pd
-import seaborn as sns
 
-from dash import Dash, html, dcc, dash_table, callback, Output, Input
 import plotly.express as px
+from plotly.subplots import make_subplots
 import plotly.graph_objs as go
 
 from shiny import App, ui, render, reactive
@@ -51,8 +50,9 @@ app_ui = ui.page_fluid(
          ),
          ui.layout_columns(
             ui.card(
-               ui.input_switch("show_events", "Show Events", value=True),
                ui.input_switch("show_excursions", "Show Excursions", value=True),
+               ui.input_switch("show_episodes", "Show Episodes", value=True),
+               ui.input_switch("show_meals", "Show Meals", value=True),
                ui.output_data_frame("events_table")
             ),
             ui.card(output_widget("event_plot"))
@@ -73,23 +73,25 @@ def server(input, output, session):
    
    @reactive.Calc
    def get_events():
-      return get_curated_events(df())
+      return pd.concat([get_curated_events(df()), import_events("imported_events", "ElizaSutherland")])
 
-   def daily(data, x_range: list = None):
-      subplot_figs = []
+   def daily(data):
       data["Day"] = data[TIME].dt.date
+      days = data["Day"].astype(str).unique().tolist()
+      fig = make_subplots(rows=len(days), cols=1)
+      row = 1
       for day, dataset in data.groupby("Day"):
-         subplot_figs.append(
+         fig.add_trace(
             go.Scatter(
                   x=dataset[TIME],
                   y=dataset[GLUCOSE],
                   mode='lines+markers',
                   name=str(day)
-            )
+            ), row=row, col=1
          )
-      fig = go.Figure(data=subplot_figs, layout=go.Layout(title='Daily (Time-Series) Plot'))
+         row += 1
 
-      if x_range or input.daily_events_switch():
+      if input.daily_events_switch():
          id = input.select_patient_plot()
          events = get_events()
          if isinstance(events, pd.DataFrame):
@@ -101,12 +103,24 @@ def server(input, output, session):
                   colors = list(color_dict.values())
                   color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
                   for index, row in event_data.iterrows():
-                     fig.add_vline(x=pd.to_datetime(row[TIME]), line_dash="dash", line_color=color_map[row['Type']])
-                     fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], showarrow=False)
+                     r = days.index(str(row[TIME].date())) + 1
+                     fig.add_shape(go.layout.Shape(
+                        type="line", 
+                        yref="y domain",
+                        x0=pd.to_datetime(row[TIME]), 
+                        y0=0,
+                        x1=pd.to_datetime(row[TIME]),
+                        y1=1,
+                        line=dict(color=color_map[row['Type']], width=3)), row=r, col=1)
+                     fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], row=r, col=1, showarrow=False)
          elif events["id"] == id:
+            day = str(events[TIME].dt.date)
             fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
             fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
-      if x_range is not None: fig.update_xaxes(type="date", range=x_range)
+         
+         #for i in range(1, len(days)+1): fig.update_yaxes(range=[-450, 450], row=i, col=1)
+      
+      fig.update_layout(height=1500)
       return fig
 
    @render.ui
@@ -161,9 +175,6 @@ def server(input, output, session):
       data.drop(columns=["id"], inplace=True)
       data[TIME] = data[TIME].astype(str)
 
-      if not input.show_events():
-         data = data[data["Type"] ]
-
       return render.DataGrid(data, row_selection_mode="single")
    
    @render.data_frame
@@ -174,10 +185,45 @@ def server(input, output, session):
 
    @render_widget
    def event_plot():
+      id = input.select_patient_event()
+      data = df().loc[id]
+
       events = get_events()
-      event = events[events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
+      event = events[events["id"] == id].iloc[list(input.events_table_selected_rows())]
       before = event[TIME].iloc[0] - pd.Timedelta(minutes=event[BEFORE].iloc[0])
       after = event[TIME].iloc[0] + pd.Timedelta(minutes=event[AFTER].iloc[0])
-      return daily(df().loc[input.select_patient_event()], x_range=[before, after])
+
+      subplot_figs = []
+      data["Day"] = data[TIME].dt.date
+      for day, dataset in data.groupby("Day"):
+         subplot_figs.append(
+            go.Scatter(
+                  x=dataset[TIME],
+                  y=dataset[GLUCOSE],
+                  mode='lines+markers',
+                  name=str(day)
+            )
+         )
+      fig = go.Figure(data=subplot_figs, layout=go.Layout(title='Daily (Time-Series) Plot'))
+
+      events = get_events()
+      if isinstance(events, pd.DataFrame):
+         event_data = events[events["id"] == id] if events is not None else None
+         if event_data is not None:
+            event_types = event_data['Type'].unique()
+            with open('event_colors.json') as colors_file:
+               color_dict = json.load(colors_file)
+               colors = list(color_dict.values())
+               color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
+               for index, row in event_data.iterrows():
+                  fig.add_vline(x=pd.to_datetime(row[TIME]), line_dash="dash", line_color=color_map[row['Type']])
+                  fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], showarrow=False)
+
+      elif events["id"] == id:
+         fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
+         fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
+
+      fig.update_xaxes(type="date", range=[before, after])
+      return fig
 
 app = App(app_ui, server, debug=True)
