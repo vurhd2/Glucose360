@@ -3,25 +3,22 @@ from events import *
 from plots import *
 from features import create_features
 import pandas as pd
+import configparser
 
 import plotly.express as px
 from plotly.subplots import make_subplots
-import plotly.graph_objs as go
+import plotly.graph_objects as go
 
 from shiny import App, ui, render, reactive
 from shiny.types import FileInfo
 from shinywidgets import output_widget, render_widget
 
-#app = Dash(__name__)
+config = configparser.ConfigParser()
+config.read('config.ini')
+GLUCOSE = config['variables']['glucose']
+TIME = config['variables']['time']
+INTERVAL = config['variables'].getint('interval')
 
-TIME = "Timestamp (YYYY-MM-DDThh:mm:ss)"
-GLUCOSE = "Glucose Value (mg/dL)"
-
-#df = import_data("datasets")
-#events = get_curated_events(df)
-#events[TIME] = pd.to_datetime(events[TIME])
-
-# ------------------- SHINY -----------------------
 app_ui = ui.page_fluid(
    ui.navset_pill(
       ui.nav_panel(
@@ -38,7 +35,6 @@ app_ui = ui.page_fluid(
          ),
          ui.card(
             output_widget("plot"),
-            ui.output_plot("agp_plot")
          )
       ),
       ui.nav_panel(
@@ -144,25 +140,59 @@ def server(input, output, session):
    @render_widget
    def plot():
       plot_type = input.select_plot()
-      if plot_type != "AGP":
-         def spaghetti(data):
-            data["Day"] = data[TIME].dt.date
-            times = data[TIME] - data[TIME].dt.normalize()
-            data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
-            data.sort_values(by=[TIME], inplace=True)
-            return px.line(data, x="Time", y=GLUCOSE, color="Day")
-         
-         plot_type = input.select_plot()
-         if plot_type == "Daily (Time-series)":
-            return daily(df().loc[input.select_patient_plot()])
-         elif plot_type == "Spaghetti":
-            return spaghetti(df().loc[input.select_patient_plot()])
+      if plot_type == "Daily (Time-series)":
+         return daily(df().loc[input.select_patient_plot()])
+      elif plot_type == "Spaghetti":
+         data = df().loc[input.select_patient_plot()]
+         data["Day"] = data[TIME].dt.date
+         times = data[TIME] - data[TIME].dt.normalize()
+         data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
+         data.sort_values(by=[TIME], inplace=True)
+         return px.line(data, x="Time", y=GLUCOSE, color="Day")
+      else:
+         return agp(df().loc[input.select_patient_plot()])
    
-   @render.plot
-   def agp_plot():
-      plot_type = input.select_plot()
-      if plot_type == "AGP":
-         return AGP_plot(df(), input.select_patient_plot())
+   def agp(data):
+      if INTERVAL > 5:
+         raise Exception("Data needs to have measurement intervals at most 5 minutes long")
+      
+      data.reset_index(inplace=True)
+
+      data[[TIME, GLUCOSE]] = pp.resample_data(data[[TIME, GLUCOSE]])
+      times = data[TIME] - data[TIME].dt.normalize()
+      # need to be in a DateTime format so seaborn can tell how to scale the x axis labels below
+      data["Time"] = (
+         pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times
+      )
+
+      data.set_index("Time", inplace=True)
+
+      agp_data = pd.DataFrame()
+      for time, measurements in data.groupby("Time"):
+         metrics = {
+            "Time": time,
+            "5th": measurements[GLUCOSE].quantile(0.05),
+            "25th": measurements[GLUCOSE].quantile(0.25),
+            "Median": measurements[GLUCOSE].median(),
+            "75th": measurements[GLUCOSE].quantile(0.75),
+            "95th": measurements[GLUCOSE].quantile(0.95),
+         }
+         agp_data = pd.concat([agp_data, pd.DataFrame.from_records([metrics])])
+
+      agp_data.sort_values(by=["Time"], inplace=True)
+
+      fig = go.Figure()
+      fig.add_trace(go.Scatter(name="5th", x=agp_data["Time"], y=agp_data["5th"], line=dict(color="#869FCE")))
+      fig.add_trace(go.Scatter(name="25th", x=agp_data["Time"], y=agp_data["25th"], fill="tonexty", fillcolor="#C9D4E9", line=dict(color="#97A8CB")))
+      fig.add_trace(go.Scatter(name="Median",x=agp_data["Time"], y=agp_data["Median"], fill="tonexty", fillcolor="#97A8CB", line=dict(color="#183260")))
+      fig.add_trace(go.Scatter(name="75th", x=agp_data["Time"], y=agp_data["75th"], fill="tonexty", fillcolor="#97A8CB", line=dict(color="#97A8CB")))
+      fig.add_trace(go.Scatter(name="95th", x=agp_data["Time"], y=agp_data["95th"], fill="tonexty", fillcolor="#C9D4E9", line=dict(color="#869FCE")))
+
+      fig.add_hline(y=70, line_color="green")
+      fig.add_hline(y=180, line_color="green")
+      fig.update_layout(height=1000, yaxis_range = [35,405])
+
+      return fig
    
    @render.data_frame
    def features_table():
