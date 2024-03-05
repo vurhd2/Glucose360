@@ -91,6 +91,8 @@ app_ui = ui.page_fluid(
    )
 )
 
+filtered_events = pd.DataFrame()
+
 def server(input, output, session):
    events_ref = reactive.Value(pd.DataFrame())
 
@@ -105,7 +107,7 @@ def server(input, output, session):
    
    @reactive.Effect
    @reactive.event(input.data_import)
-   def retrieve_events():
+   def get_initial_events():
       events_ref.set(get_curated_events(df()))
 
    def daily(data):
@@ -236,12 +238,23 @@ def server(input, output, session):
    
    @render.data_frame
    def events_table():
+      show_episodes = input.show_episodes()
+      show_excursions = input.show_excursions()
+      show_meals = input.show_meals()
+
       events = events_ref.get()
       data = events[events["id"] == input.select_patient_event()].copy()
       data.drop(columns=["id"], inplace=True)
       data[TIME] = data[TIME].astype(str)
 
-      return render.DataGrid(data, row_selection_mode="single")
+      global filtered_events
+      def filter(s):
+         if not show_episodes and 'episode' in s.lower(): return False
+         elif not show_excursions and 'excursion' in s.lower(): return False
+         elif not show_meals and 'meal' in s.lower(): return False
+         return True
+      filtered_events = data[data[TYPE].apply(filter)]
+      return render.DataGrid(filtered_events, row_selection_mode="single")
    
    @reactive.Effect
    @reactive.event(input.add_event_button)
@@ -259,8 +272,8 @@ def server(input, output, session):
    
    @render.data_frame
    def event_metrics_table():
-      events = events_ref.get()
-      event = events[events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
+      global filtered_events
+      event = filtered_events[filtered_events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
       return render.DataGrid(event_metrics(df(), event.squeeze()))
 
    @render_widget
@@ -268,8 +281,8 @@ def server(input, output, session):
       id = input.select_patient_event()
       data = df().loc[id]
 
-      events = events_ref.get()
-      event = events[events["id"] == id].iloc[list(input.events_table_selected_rows())]
+      global filtered_events
+      event = filtered_events[filtered_events["id"] == id].iloc[list(input.events_table_selected_rows())]
       before = event[TIME].iloc[0] - pd.Timedelta(minutes=event[BEFORE].iloc[0])
       after = event[TIME].iloc[0] + pd.Timedelta(minutes=event[AFTER].iloc[0])
 
@@ -286,8 +299,8 @@ def server(input, output, session):
          )
       fig = go.Figure(data=subplot_figs, layout=go.Layout(title='Daily (Time-Series) Plot'))
 
-      if isinstance(events, pd.DataFrame):
-         event_data = events[events["id"] == id] if events is not None else None
+      if isinstance(filtered_events, pd.DataFrame):
+         event_data = filtered_events[filtered_events["id"] == id] if filtered_events is not None else None
          if event_data is not None:
             event_types = event_data['Type'].unique()
             with open('event_colors.json') as colors_file:
@@ -298,9 +311,9 @@ def server(input, output, session):
                   fig.add_vline(x=pd.to_datetime(row[TIME]), line_dash="dash", line_color=color_map[row['Type']])
                   fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], showarrow=False)
 
-      elif events["id"] == id:
-         fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
-         fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
+      elif filtered_events["id"] == id:
+         fig.add_vline(x=pd.to_datetime(filtered_events[TIME]), line_dash="dash", line_color=color_map[filtered_events['Type']])
+         fig.add_annotation(yref="y domain", x=pd.to_datetime(filtered_events[TIME]), y=1, text=filtered_events['Type'], showarrow=False)
 
       fig.update_xaxes(type="date", range=[before, after])
       return fig
