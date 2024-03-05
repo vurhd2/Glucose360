@@ -24,6 +24,8 @@ AFTER = "After"
 TYPE = "Type"
 DESCRIPTION = "Description"
 
+filtered_events = pd.DataFrame()
+
 app_ui = ui.page_fluid(
    ui.navset_pill(
       ui.nav_panel(
@@ -91,10 +93,9 @@ app_ui = ui.page_fluid(
    )
 )
 
-filtered_events = pd.DataFrame()
-
 def server(input, output, session):
    events_ref = reactive.Value(pd.DataFrame())
+   filtered_events_ref = reactive.Value(pd.DataFrame())
 
    @reactive.Calc
    def df():
@@ -109,6 +110,7 @@ def server(input, output, session):
    @reactive.event(input.data_import)
    def get_initial_events():
       events_ref.set(get_curated_events(df()))
+      filtered_events_ref.set(events_ref.get())
 
    def daily(data):
       data["Day"] = data[TIME].dt.date
@@ -236,6 +238,16 @@ def server(input, output, session):
    def features_table():
       return render.DataGrid(create_features(df()).reset_index(names=["Patient"]))
    
+   @reactive.Effect
+   @reactive.event(input.event_import)
+   def bulk_import_events():
+      file: list[FileInfo] | None = input.event_import()
+      if file is not None:
+         events_ref.set(pd.concat([events_ref.get(), import_events(path=file[0]["datapath"], name=file[0]["name"].split(".")[0],
+                               id=input.select_patient_event(), day_col=input.event_day_col(),
+                               time_col=input.event_time_col(), before=input.event_import_before(),
+                               after=input.event_import_after(), type=input.event_type())]).reset_index(drop=True))
+
    @render.data_frame
    def events_table():
       show_episodes = input.show_episodes()
@@ -244,17 +256,16 @@ def server(input, output, session):
 
       events = events_ref.get()
       data = events[events["id"] == input.select_patient_event()].copy()
-      data.drop(columns=["id"], inplace=True)
       data[TIME] = data[TIME].astype(str)
 
-      global filtered_events
       def filter(s):
          if not show_episodes and 'episode' in s.lower(): return False
          elif not show_excursions and 'excursion' in s.lower(): return False
          elif not show_meals and 'meal' in s.lower(): return False
          return True
-      filtered_events = data[data[TYPE].apply(filter)]
-      return render.DataGrid(filtered_events, row_selection_mode="single")
+
+      filtered_events_ref.set(data[data[TYPE].apply(filter)])
+      return render.DataGrid(filtered_events_ref.get().drop(columns=["id"]), row_selection_mode="single")
    
    @reactive.Effect
    @reactive.event(input.add_event_button)
@@ -272,7 +283,7 @@ def server(input, output, session):
    
    @render.data_frame
    def event_metrics_table():
-      global filtered_events
+      filtered_events = filtered_events_ref.get()
       event = filtered_events[filtered_events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
       return render.DataGrid(event_metrics(df(), event.squeeze()))
 
@@ -281,8 +292,9 @@ def server(input, output, session):
       id = input.select_patient_event()
       data = df().loc[id]
 
-      global filtered_events
+      filtered_events = filtered_events_ref.get()
       event = filtered_events[filtered_events["id"] == id].iloc[list(input.events_table_selected_rows())]
+      event[TIME] = pd.to_datetime(event[TIME])
       before = event[TIME].iloc[0] - pd.Timedelta(minutes=event[BEFORE].iloc[0])
       after = event[TIME].iloc[0] + pd.Timedelta(minutes=event[AFTER].iloc[0])
 
