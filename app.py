@@ -19,11 +19,22 @@ GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
 INTERVAL = config['variables'].getint('interval')
 
+BEFORE = "Before"
+AFTER = "After"
+TYPE = "Type"
+DESCRIPTION = "Description"
+
 app_ui = ui.page_fluid(
    ui.navset_pill(
       ui.nav_panel(
          "Features",
-         ui.input_file("data_import", "Import Dexcom CGM Data (.zip file)", accept=[".zip", ".csv"], multiple=False),
+         ui.card(
+            ui.input_text("glucose_col", "Name of Glucose Column", "Glucose Value (mg/dL)"),
+            ui.input_text("time_col", "Name of Timestamp Column", "Timestamp (YYYY-MM-DDThh:mm:ss)"),
+            ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
+            ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
+            ui.input_file("data_import", "Import Dexcom CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False),
+         ),
          ui.card(ui.output_data_frame("features_table"))
       ),
       ui.nav_panel(
@@ -41,7 +52,29 @@ app_ui = ui.page_fluid(
          "Events",
          ui.output_ui("patient_event"),
          ui.layout_columns(
-            ui.card(ui.input_file("event_import", "Import Events (.zip file)", accept=[".zip", ".csv"], multiple=False)),
+            ui.card(
+               ui.layout_columns(
+                  ui.card(
+                     "Bulk Import Events",
+                     ui.input_text("event_day_col", "Name of Day Column", "Day"),
+                     ui.input_text("event_time_col", "Name of Time Column", "Time"),
+                     ui.input_numeric("event_import_before", "# of Minutes Before Timestamp to Include", 60, min=0),
+                     ui.input_numeric("event_import_after", "# of Minutes After Timestamp to Include", 60, min=0),
+                     ui.input_text("event_type", "Type of Meals Being Imported", "Cronometer Meal"),
+                     ui.input_file("event_import", "Import Events (.zip file)", accept=[".zip", ".csv"], multiple=False)
+                  ),
+                  ui.card(
+                     "Add Singular Event",
+                     ui.input_date("add_event_date", "Date"),
+                     ui.input_text("add_event_time", "Time"),
+                     ui.input_numeric("add_event_before", "# of Minutes Before Time to Include", 60, min=0),
+                     ui.input_numeric("add_event_after", "# of Minutes After Time to Include", 60, min=0),
+                     ui.input_text("add_event_type", "Type"),
+                     ui.input_text("add_event_description", "Description"),
+                     ui.input_action_button("add_event_button", "Add Event")
+                  )
+               )
+            ),
             ui.card(ui.output_data_frame("event_metrics_table")),
          ),
          ui.layout_columns(
@@ -59,17 +92,21 @@ app_ui = ui.page_fluid(
 )
 
 def server(input, output, session):
+   events_ref = reactive.Value(pd.DataFrame())
+
    @reactive.Calc
    def df():
       file: list[FileInfo] | None = input.data_import()
       if file is None:
          return pd.DataFrame()
-      print(file[0]["datapath"]) # /var/folders/bw/0rhyvszj0tjfkmy61rv7lg_w0000gn/T/fileupload-3sfa72lh/tmpyu6zs96y/0.zip
-      return import_data(file[0]["datapath"], name=file[0]["name"].split(".")[0])
+      return import_data(path=file[0]["datapath"], name=file[0]["name"].split(".")[0],
+                         glucose=input.glucose_col(), time=input.time_col(),
+                         interval=input.resample_interval(), max_gap=input.max_gap())
    
-   @reactive.Calc
-   def get_events():
-      return pd.concat([get_curated_events(df()), import_events("imported_events", "ElizaSutherland")])
+   @reactive.Effect
+   @reactive.event(input.data_import)
+   def retrieve_events():
+      events_ref.set(get_curated_events(df()))
 
    def daily(data):
       data["Day"] = data[TIME].dt.date
@@ -89,7 +126,8 @@ def server(input, output, session):
 
       if input.daily_events_switch():
          id = input.select_patient_plot()
-         events = get_events()
+
+         events = events_ref.get()
          if isinstance(events, pd.DataFrame):
             event_data = events[events["id"] == id] if events is not None else None
             if event_data is not None:
@@ -113,8 +151,6 @@ def server(input, output, session):
             day = str(events[TIME].dt.date)
             fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
             fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
-         
-         #for i in range(1, len(days)+1): fig.update_yaxes(range=[-450, 450], row=i, col=1)
       
       fig.update_layout(height=1500)
       return fig
@@ -135,7 +171,7 @@ def server(input, output, session):
          return ui.input_switch("daily_events_switch", "Show Events", value=events_on)
       elif plot_type == "Spaghetti":
          chunk_day = input.spaghetti_chunk_switch() if "spaghetti_chunk_switch" in input else False
-         return ui.input_switch("daily_events_switch", "Chunk Weekend/Weekday", value=chunk_day)
+         return ui.input_switch("spaghetti_chunk_switch", "Chunk Weekend/Weekday", value=chunk_day)
 
    @render_widget
    def plot():
@@ -148,7 +184,7 @@ def server(input, output, session):
          times = data[TIME] - data[TIME].dt.normalize()
          data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
          data.sort_values(by=[TIME], inplace=True)
-         return px.line(data, x="Time", y=GLUCOSE, color="Day")
+         return px.line(data, x="Time", y=GLUCOSE, color="Day", facet_col="Day Chunking" if input.spaghetti_chunk_switch() else None)
       else:
          return agp(df().loc[input.select_patient_plot()])
    
@@ -200,16 +236,30 @@ def server(input, output, session):
    
    @render.data_frame
    def events_table():
-      events = get_events()
+      events = events_ref.get()
       data = events[events["id"] == input.select_patient_event()].copy()
       data.drop(columns=["id"], inplace=True)
       data[TIME] = data[TIME].astype(str)
 
       return render.DataGrid(data, row_selection_mode="single")
    
+   @reactive.Effect
+   @reactive.event(input.add_event_button)
+   def add_event():
+      added_event = pd.DataFrame.from_records({
+         "id": input.select_patient_event(),
+         TIME: str(input.add_event_date()) + " " + input.add_event_time(),
+         BEFORE: input.add_event_before(),
+         AFTER: input.add_event_after(),
+         TYPE: input.add_event_type(),
+         DESCRIPTION: input.add_event_description()
+      }, index=[0])
+      added_event[TIME] = pd.to_datetime(added_event[TIME])
+      events_ref.set(pd.concat([events_ref.get(), added_event]).reset_index(drop=True))
+   
    @render.data_frame
    def event_metrics_table():
-      events = get_events()
+      events = events_ref.get()
       event = events[events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
       return render.DataGrid(event_metrics(df(), event.squeeze()))
 
@@ -218,7 +268,7 @@ def server(input, output, session):
       id = input.select_patient_event()
       data = df().loc[id]
 
-      events = get_events()
+      events = events_ref.get()
       event = events[events["id"] == id].iloc[list(input.events_table_selected_rows())]
       before = event[TIME].iloc[0] - pd.Timedelta(minutes=event[BEFORE].iloc[0])
       after = event[TIME].iloc[0] + pd.Timedelta(minutes=event[AFTER].iloc[0])
@@ -236,7 +286,6 @@ def server(input, output, session):
          )
       fig = go.Figure(data=subplot_figs, layout=go.Layout(title='Daily (Time-Series) Plot'))
 
-      events = get_events()
       if isinstance(events, pd.DataFrame):
          event_data = events[events["id"] == id] if events is not None else None
          if event_data is not None:
