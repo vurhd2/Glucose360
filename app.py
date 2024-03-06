@@ -161,6 +161,7 @@ def server(input, output, session):
          offset_after = pd.Timedelta(hours=1, minutes=23)
          fig.update_xaxes(range=[pd.Timestamp(days[0]) - offset_before, pd.Timestamp(days[1]) + offset_after], row=1, col=1)
          fig.update_xaxes(range=[pd.Timestamp(days[-1]) - offset_before, (pd.Timestamp(days[-1]) + pd.Timedelta(days=1)) + offset_after], row=len(days), col=1)
+      fig.update_yaxes(range=[np.min(data[GLUCOSE]) - 10, np.max(data[GLUCOSE]) + 10])
       fig.update_layout(height=1500)
       return fig
 
