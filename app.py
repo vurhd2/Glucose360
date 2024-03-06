@@ -156,6 +156,11 @@ def server(input, output, session):
             fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
             fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
       
+      if len(days) > 1:
+         offset_before = pd.Timedelta(hours=1, minutes=26)
+         offset_after = pd.Timedelta(hours=1, minutes=23)
+         fig.update_xaxes(range=[pd.Timestamp(days[0]) - offset_before, pd.Timestamp(days[1]) + offset_after], row=1, col=1)
+         fig.update_xaxes(range=[pd.Timestamp(days[-1]) - offset_before, (pd.Timestamp(days[-1]) + pd.Timedelta(days=1)) + offset_after], row=len(days), col=1)
       fig.update_layout(height=1500)
       return fig
 
