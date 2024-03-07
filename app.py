@@ -44,7 +44,8 @@ app_ui = ui.page_fluid(
          ui.layout_columns(
             ui.output_ui("patient_plot"),
             ui.input_select("select_plot", "Select Plot:", ["Daily (Time-series)", "Spaghetti", "AGP"]),
-            ui.output_ui("plot_settings")
+            ui.output_ui("plot_settings"),
+            ui.output_ui("plot_height")
          ),
          ui.card(
             output_widget("plot"),
@@ -186,7 +187,8 @@ def server(input, output, session):
          fig.update_xaxes(range=[pd.Timestamp(days[-1]) - offset_before, (pd.Timestamp(days[-1]) + pd.Timedelta(days=1)) + offset_after], row=len(days), col=1)
       fig.update_yaxes(range=[np.min(data[GLUCOSE]) - 10, np.max(data[GLUCOSE]) + 10])
 
-      fig.update_layout(height=3000 if show_events else 1500)
+      #fig.update_layout(height=3000 if show_events else 1500)
+      fig.update_layout(height=input.plot_height_slider())
       return fig
 
    @render.ui
@@ -196,6 +198,23 @@ def server(input, output, session):
    @render.ui
    def patient_event():
       return ui.input_select("select_patient_event", "Select Patient:", df().index.unique().tolist())
+   
+   @render.ui
+   def plot_height():
+      plot_type = input.select_plot()
+      min = 750
+      height = 3000
+      max = 4000
+      if plot_type == "Spaghetti": 
+         min = 250
+         height = 600
+         max = 750
+      elif plot_type == "AGP":
+         min = 600
+         max = 2000 
+         height = 1000
+
+      return ui.input_slider("plot_height_slider", "Set Plot Height", min, max, height)
 
    @render.ui
    def plot_settings():
@@ -218,7 +237,7 @@ def server(input, output, session):
          times = data[TIME] - data[TIME].dt.normalize()
          data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
          data.sort_values(by=[TIME], inplace=True)
-         return px.line(data, x="Time", y=GLUCOSE, color="Day", facet_col="Day Chunking" if input.spaghetti_chunk_switch() else None)
+         return px.line(data, x="Time", y=GLUCOSE, color="Day", height=input.plot_height_slider(), facet_col="Day Chunking" if input.spaghetti_chunk_switch() else None)
       else:
          return agp(df().loc[input.select_patient_plot()])
    
@@ -260,7 +279,7 @@ def server(input, output, session):
 
       fig.add_hline(y=70, line_color="green")
       fig.add_hline(y=180, line_color="green")
-      fig.update_layout(height=1000, yaxis_range = [35,405])
+      fig.update_layout(height=input.plot_height_slider(), yaxis_range = [35,405])
 
       return fig
    
