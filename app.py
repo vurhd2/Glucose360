@@ -62,7 +62,7 @@ app_ui = ui.page_fluid(
                      ui.input_text("event_time_col", "Name of Time Column", "Time"),
                      ui.input_numeric("event_import_before", "# of Minutes Before Timestamp to Include", 60, min=0),
                      ui.input_numeric("event_import_after", "# of Minutes After Timestamp to Include", 60, min=0),
-                     ui.input_text("event_type", "Type of Meals Being Imported", "Cronometer Meal"),
+                     ui.input_text("event_type", "Type of Events Being Imported", "Cronometer Meal"),
                      ui.input_file("event_import", "Import Events (.zip file)", accept=[".zip", ".csv"], multiple=False)
                   ),
                   ui.card(
@@ -113,9 +113,16 @@ def server(input, output, session):
       filtered_events_ref.set(events_ref.get())
 
    def daily(data):
+      show_events = input.daily_events_switch()
+      id = input.select_patient_plot()
+      events = events_ref.get()
+
       data["Day"] = data[TIME].dt.date
       days = data["Day"].astype(str).unique().tolist()
-      fig = make_subplots(rows=len(days), cols=1)
+
+      fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.9,0.3] if show_events else None,
+                          specs=[[{"type":"scatter"}, {"type":"table"}] for i in range(len(days))] if show_events else None,
+                          horizontal_spacing=0.01 if show_events else None)
       row = 1
       for day, dataset in data.groupby("Day"):
          fig.add_trace(
@@ -126,12 +133,27 @@ def server(input, output, session):
                   name=str(day)
             ), row=row, col=1
          )
+
+         if show_events:
+            day_events = events[(events[TIME].dt.date == day) & (events["id"] == id)].sort_values(TIME)
+            table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events[TYPE].tolist(), day_events[DESCRIPTION].tolist()]
+            if day_events.shape[0] != 0:
+               fig.add_trace(
+                  go.Table(
+                     columnwidth=[20,30,40],
+                     header=dict(
+                        values = [["<b>Time</b>"], ["<b>Type</b>"], ["<b>Description</b>"]]
+                     ),
+                     cells=dict(
+                        values=table_body,
+                        align=['left', 'left', 'left']
+                     )
+                  ), row=row, col=2
+               )
+
          row += 1
 
-      if input.daily_events_switch():
-         id = input.select_patient_plot()
-
-         events = events_ref.get()
+      if show_events:
          if isinstance(events, pd.DataFrame):
             event_data = events[events["id"] == id] if events is not None else None
             if event_data is not None:
@@ -156,13 +178,15 @@ def server(input, output, session):
             fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
             fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
       
+      # standardizing axes
       if len(days) > 1:
          offset_before = pd.Timedelta(hours=1, minutes=26)
          offset_after = pd.Timedelta(hours=1, minutes=23)
          fig.update_xaxes(range=[pd.Timestamp(days[0]) - offset_before, pd.Timestamp(days[1]) + offset_after], row=1, col=1)
          fig.update_xaxes(range=[pd.Timestamp(days[-1]) - offset_before, (pd.Timestamp(days[-1]) + pd.Timedelta(days=1)) + offset_after], row=len(days), col=1)
       fig.update_yaxes(range=[np.min(data[GLUCOSE]) - 10, np.max(data[GLUCOSE]) + 10])
-      fig.update_layout(height=1500)
+
+      fig.update_layout(height=3000 if show_events else 1500)
       return fig
 
    @render.ui
@@ -336,4 +360,4 @@ def server(input, output, session):
       fig.update_xaxes(type="date", range=[before, after])
       return fig
 
-app = App(app_ui, server, debug=True)
+app = App(app_ui, server, debug=False)
