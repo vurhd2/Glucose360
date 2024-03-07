@@ -4,7 +4,14 @@ import preprocessing as pp
 import matplotlib.pyplot as plt
 import configparser
 import json
+
+import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+
 from events import retrieve_event_data
+
+import plotly.tools as tls
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -15,7 +22,7 @@ INTERVAL = config['variables'].getint('interval')
 def daily_plot_all(
     df: pd.DataFrame,
     events: pd.DataFrame = None,
-    chunk_day: bool = False,
+    combine: bool = False,
     save: bool = False,
 ):
     """
@@ -27,13 +34,13 @@ def daily_plot_all(
     """
     sns.set_theme()
     for id, data in df.groupby("id"):
-        daily_plot(data, id, events, chunk_day, save)
+        daily_plot(data, id, events, combine, save)
 
 def daily_plot(
     df: pd.DataFrame,
     id: str,
     events: pd.DataFrame = None,
-    chunk_day: bool = False,
+    combine: bool = False,
     save: bool = False,
 ):
     """
@@ -41,24 +48,31 @@ def daily_plot(
     @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
     @param id   the id of the patient whose data is graphed
     @param events  a DataFrame containing event timeframes for some (or all) of the given patients
-    @param chunk_day  a boolean indicating whether to split weekdays and weekends
+    @param combine  a boolean indicating whether to show only one large plot for data from all days
     @param save a boolean indicating whether to download the graphs locally
     """
     data = df.loc[id]
 
     data[TIME] = pd.to_datetime(data[TIME])
     data.reset_index(inplace=True)
+    if not combine: 
+       data["Day"] = data[TIME].dt.normalize()
+       data["Time"] = pd.Timestamp("1970-01-01T00") + (data[TIME] - data["Day"])
 
     plot = sns.relplot(
         data=data,
         kind="line",
-        x=TIME,
+        x=TIME if combine else "Time",
         y=GLUCOSE,
-        col="Day Chunking" if chunk_day else None,
+        col=None if combine else "Day",
+        col_wrap=None if combine else 4,
+        height=5 if combine else 30,
+        aspect=2
     )
     plot.figure.subplots_adjust(top=0.9)
     plot.figure.suptitle(f"Glucose (mg/dL) vs. Timestamp for {id}")
     plot.figure.set_size_inches(10, 6)
+    if not combine: plot.figure.subplots_adjust(hspace=0, wspace=0)
 
     # plotting vertical lines to represent the events
     if events is not None:
@@ -80,9 +94,12 @@ def daily_plot(
     plt.legend(by_label.values(), by_label.keys(), bbox_to_anchor=(1.35, 0.5), loc='center right')
     plt.tight_layout()
 
-    for ax in plot.axes.flat:
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
+    if not combine:
+      plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(0, 24, 2)]), [f"{hour:02d}" for hour in range(0, 24, 2)])
 
+    for ax in plot.axes.flat:
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45 if combine else 90)
+    
     plt.ylim(35, 405)
     plt.show() if not save else plot.savefig("./plots/" + str(id) + "Daily.png")
 
@@ -117,19 +134,18 @@ def event_plot(event_data: pd.DataFrame, event: pd.Series):
     plt.ylim(35, 405)
     plt.show()
 
-def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, save: bool = False):
+def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, height: int = 600):
     """
     Sequentially produces spaghetti plots for all the given patients
-    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+    @param df         a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
     @param chunk_day  a boolean indicating whether to split weekdays and weekends
-    @param save a boolean indicating whether to download the graphs locally
+    @param height     the height (in pixels) of the resulting graph
     """
-    sns.set_theme()
     for id, data in df.groupby("id"):
-        spaghetti_plot(data, id, chunk_day, save)
+        spaghetti_plot(data, id, chunk_day, height)
 
 def spaghetti_plot(
-    df: pd.DataFrame, id: str, chunk_day: bool = False, save: bool = False
+    df: pd.DataFrame, id: str, chunk_day: bool = False, height: int = 600, app=False
 ):
     """
     Graphs a spaghetti plot for the given patient
@@ -139,55 +155,26 @@ def spaghetti_plot(
     @param save a boolean indicating whether to download the graphs locally
     """
     data = df.loc[id]
-
-    data.reset_index(inplace=True)
-
-    # Convert timestamp column to datetime format
-    data[TIME] = pd.to_datetime(data[TIME])
-
     data["Day"] = data[TIME].dt.date
-
     times = data[TIME] - data[TIME].dt.normalize()
-    # need to be in a DateTime format so seaborn can tell how to scale the x axis labels
-    data["Time"] = (
-        pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times
-    )
-
+    data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
     data.sort_values(by=[TIME], inplace=True)
 
-    plot = sns.relplot(
-        data=data,
-        kind="line",
-        x="Time",
-        y=GLUCOSE,
-        hue="Day",
-        col="Day Chunking" if chunk_day else None,
-    )
+    fig = px.line(data, x="Time", y=GLUCOSE, color="Day", title=f"Spaghetti Plot for {id}", height=height, facet_col="Day Chunking" if chunk_day else None)
+    if app: return fig
+    fig.show()
 
-    plot.fig.subplots_adjust(top=0.9)
-    plot.fig.suptitle(f"Spaghetti Plot for {id}")
-
-    plt.xticks(
-        pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]),
-        (f"{hour:02d}:00" for hour in range(24)),
-    )
-    plt.ylim(35, 405)
-    for ax in plot.axes.flat:
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
-    plt.show() if not save else plt.savefig("./plots/" + str(id) + "Spaghetti.png", bbox_inches="tight")
-
-def AGP_plot_all(df: pd.DataFrame, save: bool = False):
+def AGP_plot_all(df: pd.DataFrame, height: int = 600):
     """
     Displays (and possibly saves) AGP Plots for each patient in the given DataFrame
     @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
     @param save a boolean indicating whether to download the graphs locally
     """
-    sns.set_theme()
     for id, data in df.groupby("id"):
-        AGP_plot(data, id, save)
+        AGP_plot(data, id, height)
 
 
-def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
+def AGP_plot(df: pd.DataFrame, id: str, height: int = 600, app=False):
     """
     Displays (and possibly saves) an AGP Plot for only the given patient in the DataFrame
     @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
@@ -195,86 +182,42 @@ def AGP_plot(df: pd.DataFrame, id: str, save: bool = False):
     @param save a boolean indicating whether to download the graphs locally
     """
     if INTERVAL > 5:
-        raise Exception(
-            "Data needs to have measurement intervals at most 5 minutes long"
-        )
+         raise Exception("Data needs to have measurement intervals at most 5 minutes long")
 
-    data = df.loc[id]
+    data = df.loc[id]  
     data.reset_index(inplace=True)
 
     data[[TIME, GLUCOSE]] = pp.resample_data(data[[TIME, GLUCOSE]])
     times = data[TIME] - data[TIME].dt.normalize()
     # need to be in a DateTime format so seaborn can tell how to scale the x axis labels below
-    data["Time"] = (
-        pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times
-    )
+    data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
 
     data.set_index("Time", inplace=True)
 
     agp_data = pd.DataFrame()
     for time, measurements in data.groupby("Time"):
-        metrics = {
-            "Time": time,
-            "5th": measurements[GLUCOSE].quantile(0.05),
-            "25th": measurements[GLUCOSE].quantile(0.25),
-            "Median": measurements[GLUCOSE].median(),
-            "75th": measurements[GLUCOSE].quantile(0.75),
-            "95th": measurements[GLUCOSE].quantile(0.95),
-        }
-        agp_data = pd.concat([agp_data, pd.DataFrame.from_records([metrics])])
-
-    agp_data = pd.melt(
-        agp_data,
-        id_vars=["Time"],
-        value_vars=["5th", "25th", "Median", "75th", "95th"],
-        var_name="Metric",
-        value_name=GLUCOSE,
-    )
+      metrics = {
+         "Time": time,
+         "5th": measurements[GLUCOSE].quantile(0.05),
+         "25th": measurements[GLUCOSE].quantile(0.25),
+         "Median": measurements[GLUCOSE].median(),
+         "75th": measurements[GLUCOSE].quantile(0.75),
+         "95th": measurements[GLUCOSE].quantile(0.95),
+      }
+      agp_data = pd.concat([agp_data, pd.DataFrame.from_records([metrics])])
 
     agp_data.sort_values(by=["Time"], inplace=True)
 
-    plot = sns.relplot(
-        data=agp_data,
-        kind="line",
-        x="Time",
-        y=GLUCOSE,
-        hue="Metric",
-        hue_order=["95th", "75th", "Median", "25th", "5th"],
-        palette=["#869FCE", "#97A8CB", "#183260", "#97A8CB", "#869FCE"],
-    )
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(name="5th", x=agp_data["Time"], y=agp_data["5th"], line=dict(color="#869FCE")))
+    fig.add_trace(go.Scatter(name="25th", x=agp_data["Time"], y=agp_data["25th"], fill="tonexty", fillcolor="#C9D4E9", line=dict(color="#97A8CB")))
+    fig.add_trace(go.Scatter(name="Median",x=agp_data["Time"], y=agp_data["Median"], fill="tonexty", fillcolor="#97A8CB", line=dict(color="#183260")))
+    fig.add_trace(go.Scatter(name="75th", x=agp_data["Time"], y=agp_data["75th"], fill="tonexty", fillcolor="#97A8CB", line=dict(color="#97A8CB")))
+    fig.add_trace(go.Scatter(name="95th", x=agp_data["Time"], y=agp_data["95th"], fill="tonexty", fillcolor="#C9D4E9", line=dict(color="#869FCE")))
 
-    plot.fig.subplots_adjust(top=0.9)
-    plot.fig.suptitle(f"AGP Plot for {id}")
+    fig.add_hline(y=70, line_color="green")
+    fig.add_hline(y=180, line_color="green")
+    fig.update_layout(title={"text": f"AGP Plot for {id}"}, height=height, yaxis_range = [35,405])
 
-    plt.xticks(
-        pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(24)]),
-        (f"{hour:02d}:00" for hour in range(24)),
-    )
-    plt.xticks(rotation=45)
-    plt.ylim(35, 405)
-
-    for ax in plot.axes.flat:
-        ax.axhline(70, color="green")
-        ax.axhline(180, color="green")
-
-        # shading between lines
-        plt.fill_between(
-            ax.lines[0].get_xdata(),
-            ax.lines[0].get_ydata(),
-            ax.lines[1].get_ydata(),
-            color="#C9D4E9",
-        )
-        plt.fill_between(
-            ax.lines[1].get_xdata(),
-            ax.lines[1].get_ydata(),
-            ax.lines[3].get_ydata(),
-            color="#97A8CB",
-        )
-        plt.fill_between(
-            ax.lines[3].get_xdata(),
-            ax.lines[3].get_ydata(),
-            ax.lines[4].get_ydata(),
-            color="#C9D4E9",
-        )
-
-    plt.show() if not save else plt.savefig("./plots/" + str(id) + "AGP.png", bbox_inches="tight")
+    if app: return fig
+    fig.show()

@@ -188,7 +188,8 @@ def server(input, output, session):
       fig.update_yaxes(range=[np.min(data[GLUCOSE]) - 10, np.max(data[GLUCOSE]) + 10])
 
       #fig.update_layout(height=3000 if show_events else 1500)
-      fig.update_layout(height=input.plot_height_slider())
+      fig.update_layout(height=input.plot_height_slider(), showlegend=(not show_events))
+      #fig.write_image("your_image.pdf", engine="kaleido")
       return fig
 
    @render.ui
@@ -232,56 +233,9 @@ def server(input, output, session):
       if plot_type == "Daily (Time-series)":
          return daily(df().loc[input.select_patient_plot()])
       elif plot_type == "Spaghetti":
-         data = df().loc[input.select_patient_plot()]
-         data["Day"] = data[TIME].dt.date
-         times = data[TIME] - data[TIME].dt.normalize()
-         data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
-         data.sort_values(by=[TIME], inplace=True)
-         return px.line(data, x="Time", y=GLUCOSE, color="Day", height=input.plot_height_slider(), facet_col="Day Chunking" if input.spaghetti_chunk_switch() else None)
+         return spaghetti_plot(df(), input.select_patient_plot(), input.spaghetti_chunk_switch(), input.plot_height_slider(), app=True)
       else:
-         return agp(df().loc[input.select_patient_plot()])
-   
-   def agp(data):
-      if INTERVAL > 5:
-         raise Exception("Data needs to have measurement intervals at most 5 minutes long")
-      
-      data.reset_index(inplace=True)
-
-      data[[TIME, GLUCOSE]] = pp.resample_data(data[[TIME, GLUCOSE]])
-      times = data[TIME] - data[TIME].dt.normalize()
-      # need to be in a DateTime format so seaborn can tell how to scale the x axis labels below
-      data["Time"] = (
-         pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times
-      )
-
-      data.set_index("Time", inplace=True)
-
-      agp_data = pd.DataFrame()
-      for time, measurements in data.groupby("Time"):
-         metrics = {
-            "Time": time,
-            "5th": measurements[GLUCOSE].quantile(0.05),
-            "25th": measurements[GLUCOSE].quantile(0.25),
-            "Median": measurements[GLUCOSE].median(),
-            "75th": measurements[GLUCOSE].quantile(0.75),
-            "95th": measurements[GLUCOSE].quantile(0.95),
-         }
-         agp_data = pd.concat([agp_data, pd.DataFrame.from_records([metrics])])
-
-      agp_data.sort_values(by=["Time"], inplace=True)
-
-      fig = go.Figure()
-      fig.add_trace(go.Scatter(name="5th", x=agp_data["Time"], y=agp_data["5th"], line=dict(color="#869FCE")))
-      fig.add_trace(go.Scatter(name="25th", x=agp_data["Time"], y=agp_data["25th"], fill="tonexty", fillcolor="#C9D4E9", line=dict(color="#97A8CB")))
-      fig.add_trace(go.Scatter(name="Median",x=agp_data["Time"], y=agp_data["Median"], fill="tonexty", fillcolor="#97A8CB", line=dict(color="#183260")))
-      fig.add_trace(go.Scatter(name="75th", x=agp_data["Time"], y=agp_data["75th"], fill="tonexty", fillcolor="#97A8CB", line=dict(color="#97A8CB")))
-      fig.add_trace(go.Scatter(name="95th", x=agp_data["Time"], y=agp_data["95th"], fill="tonexty", fillcolor="#C9D4E9", line=dict(color="#869FCE")))
-
-      fig.add_hline(y=70, line_color="green")
-      fig.add_hline(y=180, line_color="green")
-      fig.update_layout(height=input.plot_height_slider(), yaxis_range = [35,405])
-
-      return fig
+         return AGP_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
    
    @render.data_frame
    def features_table():
