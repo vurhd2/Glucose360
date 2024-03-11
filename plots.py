@@ -161,6 +161,8 @@ def spaghetti_plot(
     data.sort_values(by=[TIME], inplace=True)
 
     fig = px.line(data, x="Time", y=GLUCOSE, color="Day", title=f"Spaghetti Plot for {id}", height=height, facet_col="Day Chunking" if chunk_day else None)
+    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time") # shows only the times for the x-axis
+    
     if app: return fig
     fig.show()
 
@@ -218,6 +220,7 @@ def AGP_plot(df: pd.DataFrame, id: str, height: int = 600, app=False):
     fig.add_hline(y=70, line_color="green")
     fig.add_hline(y=180, line_color="green")
     fig.update_layout(title={"text": f"AGP Plot for {id}"}, height=height, yaxis_range = [35,405])
+    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time") # shows only the times for the x-axis
 
     if app: return fig
     fig.show()
