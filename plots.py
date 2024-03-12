@@ -23,60 +23,58 @@ INTERVAL = config['variables'].getint('interval')
 def daily_plot_all(
     df: pd.DataFrame,
     events: pd.DataFrame = None,
-    combine: bool = False,
-    save: bool = False,
+    height: int = 2000
 ):
     """
     Graphs (and possibly saves) daily plots for all of the patients in the given DataFrame
     @param df         a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
     @param events     a DataFrame containing event timeframes for some (or all) of the given patients
-    @param chunk_day  a boolean indicating whether to split weekdays and weekends
-    @param save       a boolean indicating whether to download the graphs locally
+    @param height
     """
-    sns.set_theme()
     for id, data in df.groupby("id"):
-        daily_plot(data, id, events, combine, save)
+        daily_plot(data, id, height, events)
 
 def daily_plot(
-    df: pd.DataFrame,
-    id: str,
-    events: pd.DataFrame = None,
-    combine: bool = False,
-    save: bool = False,
+   df: pd.DataFrame,
+   id: str,
+   height: int = 2000,
+   events: pd.DataFrame = None,
+   app = False
 ):
-    """
-    Only graphs (and possibly saves) a daily plot for the given patient
-    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-    @param id   the id of the patient whose data is graphed
-    @param events  a DataFrame containing event timeframes for some (or all) of the given patients
-    @param combine  a boolean indicating whether to show only one large plot for data from all days
-    @param save a boolean indicating whether to download the graphs locally
-    """
-    data = df.loc[id]
+   """
+   Only graphs (and possibly saves) a daily plot for the given patient
+   @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+   @param id   the id of the patient whose data is graphed
+   @param events  a DataFrame containing event timeframes for some (or all) of the given patients
+   """
+   show_events = events is not None
+   data = df.loc[id].copy()
 
-    data[TIME] = pd.to_datetime(data[TIME])
-    data.reset_index(inplace=True)
-    if not combine: 
-       data["Day"] = data[TIME].dt.normalize()
-       data["Time"] = pd.Timestamp("1970-01-01T00") + (data[TIME] - data["Day"])
+   data["Day"] = data[TIME].dt.date
+   days = data["Day"].astype(str).unique().tolist()
 
-    plot = sns.relplot(
-        data=data,
-        kind="line",
-        x=TIME if combine else "Time",
-        y=GLUCOSE,
-        col=None if combine else "Day",
-        col_wrap=None if combine else 4,
-        height=5 if combine else 30,
-        aspect=2
-    )
-    plot.figure.subplots_adjust(top=0.9)
-    plot.figure.suptitle(f"Glucose (mg/dL) vs. Timestamp for {id}")
-    plot.figure.set_size_inches(10, 6)
-    if not combine: plot.figure.subplots_adjust(hspace=0, wspace=0)
+   fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.66,0.34] if show_events else None,
+                        specs=[[{"type":"scatter"}, {"type":"table"}] for i in range(len(days))] if show_events else None,
+                        horizontal_spacing=0.01 if show_events else None)
+   row = 1
+   for day, dataset in data.groupby("Day"):
+      fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day)), row=row, col=1)
 
-    # plotting vertical lines to represent the events
-    if events is not None:
+      if show_events:
+         events[TIME] = pd.to_datetime(events[TIME])
+         day_events = events[(events[TIME].dt.date == day) & (events["id"] == id)].sort_values(TIME)
+         table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events["Description"].tolist()]
+         if day_events.shape[0] != 0:
+            fig.add_trace(
+               go.Table(
+                  columnwidth=[10,40],
+                  header=dict(values = [["<b>Time</b>"], ["<b>Description</b>"]],font=dict(size=11)),
+                  cells=dict(values=table_body,align=['left', 'left'],font=dict(size=10),)
+               ), row=row, col=2
+            )
+      row += 1
+
+   if show_events:
       if isinstance(events, pd.DataFrame):
          event_data = events[events["id"] == id] if events is not None else None
          if event_data is not None:
@@ -86,23 +84,32 @@ def daily_plot(
                colors = list(color_dict.values())
                color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
                for index, row in event_data.iterrows():
-                  plt.axvline(pd.to_datetime(row[TIME]), color=color_map[row['Type']], label=row['Type'])
+                  r = days.index(str(row[TIME].date())) + 1
+                  fig.add_shape(go.layout.Shape(
+                     type="line", 
+                     yref="y domain",
+                     x0=pd.to_datetime(row[TIME]), 
+                     y0=0,
+                     x1=pd.to_datetime(row[TIME]),
+                     y1=1,
+                     line=dict(color=color_map[row['Type']], width=3)), row=r, col=1)
+                  fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], row=r, col=1, showarrow=False)
       elif events["id"] == id:
-         plt.axvline(pd.to_datetime(events[TIME]), color="orange", label=events['Type'])
-    
-    handles, labels = plt.gca().get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys(), bbox_to_anchor=(1.35, 0.5), loc='center right')
-    plt.tight_layout()
+         day = str(events[TIME].dt.date)
+         fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
+         fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
+   
+   # standardizing axes
+   if len(days) > 1:
+      offset_before = pd.Timedelta(hours=1, minutes=26)
+      offset_after = pd.Timedelta(hours=1, minutes=23)
+      fig.update_xaxes(range=[pd.Timestamp(days[0]) - offset_before, pd.Timestamp(days[1]) + offset_after], row=1, col=1)
+      fig.update_xaxes(range=[pd.Timestamp(days[-1]) - offset_before, (pd.Timestamp(days[-1]) + pd.Timedelta(days=1)) + offset_after], row=len(days), col=1)
+   fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
 
-    if not combine:
-      plt.xticks(pd.to_datetime([f"1/1/1970T{hour:02d}:00:00" for hour in range(0, 24, 2)]), [f"{hour:02d}" for hour in range(0, 24, 2)])
-
-    for ax in plot.axes.flat:
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45 if combine else 90)
-    
-    plt.ylim(35, 405)
-    plt.show() if not save else plot.savefig("./plots/" + str(id) + "Daily.png")
+   fig.update_layout(title=f"Daily Plot for {id}", height=height, showlegend=(not show_events))
+   if app: return fig
+   fig.show()
 
 def event_plot_all(df: pd.DataFrame, events: pd.DataFrame):
     sns.set_theme()
@@ -206,7 +213,7 @@ def spaghetti_plot(
     @param height       the height of the resulting plot (in pixels)
     @param app          a boolean indicating whether this function is being run within the web app or not
     """
-    data = df.loc[id]
+    data = df.loc[id].copy()
     data["Day"] = data[TIME].dt.date
     times = data[TIME] - data[TIME].dt.normalize()
     data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)

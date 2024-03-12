@@ -113,85 +113,6 @@ def server(input, output, session):
       events_ref.set(get_curated_events(df()))
       filtered_events_ref.set(events_ref.get())
 
-   def daily(data):
-      show_events = input.daily_events_switch()
-      id = input.select_patient_plot()
-      events = events_ref.get()
-
-      data["Day"] = data[TIME].dt.date
-      days = data["Day"].astype(str).unique().tolist()
-
-      fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.66,0.34] if show_events else None,
-                          specs=[[{"type":"scatter"}, {"type":"table"}] for i in range(len(days))] if show_events else None,
-                          horizontal_spacing=0.01 if show_events else None)
-      row = 1
-      for day, dataset in data.groupby("Day"):
-         fig.add_trace(
-            go.Scatter(
-                  x=dataset[TIME],
-                  y=dataset[GLUCOSE],
-                  mode='lines+markers',
-                  name=str(day)
-            ), row=row, col=1
-         )
-
-         if show_events:
-            day_events = events[(events[TIME].dt.date == day) & (events["id"] == id)].sort_values(TIME)
-            table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events[DESCRIPTION].tolist()]
-            if day_events.shape[0] != 0:
-               fig.add_trace(
-                  go.Table(
-                     columnwidth=[10,40],
-                     header=dict(
-                        values = [["<b>Time</b>"], ["<b>Description</b>"]],
-                        font=dict(size=11)
-                     ),
-                     cells=dict(
-                        values=table_body,
-                        align=['left', 'left'],
-                        font=dict(size=10),
-                     )
-                  ), row=row, col=2
-               )
-
-         row += 1
-
-      if show_events:
-         if isinstance(events, pd.DataFrame):
-            event_data = events[events["id"] == id] if events is not None else None
-            if event_data is not None:
-               event_types = event_data['Type'].unique()
-               with open('event_colors.json') as colors_file:
-                  color_dict = json.load(colors_file)
-                  colors = list(color_dict.values())
-                  color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
-                  for index, row in event_data.iterrows():
-                     r = days.index(str(row[TIME].date())) + 1
-                     fig.add_shape(go.layout.Shape(
-                        type="line", 
-                        yref="y domain",
-                        x0=pd.to_datetime(row[TIME]), 
-                        y0=0,
-                        x1=pd.to_datetime(row[TIME]),
-                        y1=1,
-                        line=dict(color=color_map[row['Type']], width=3)), row=r, col=1)
-                     fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], row=r, col=1, showarrow=False)
-         elif events["id"] == id:
-            day = str(events[TIME].dt.date)
-            fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
-            fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
-      
-      # standardizing axes
-      if len(days) > 1:
-         offset_before = pd.Timedelta(hours=1, minutes=26)
-         offset_after = pd.Timedelta(hours=1, minutes=23)
-         fig.update_xaxes(range=[pd.Timestamp(days[0]) - offset_before, pd.Timestamp(days[1]) + offset_after], row=1, col=1)
-         fig.update_xaxes(range=[pd.Timestamp(days[-1]) - offset_before, (pd.Timestamp(days[-1]) + pd.Timedelta(days=1)) + offset_after], row=len(days), col=1)
-      fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
-
-      fig.update_layout(title=f"Daily Plot for {id}", height=input.plot_height_slider(), showlegend=(not show_events))
-      return fig
-
    @render.ui
    def patient_plot():
       return ui.input_select("select_patient_plot", "Select Patient:", df().index.unique().tolist())
@@ -235,7 +156,8 @@ def server(input, output, session):
    def plot():
       plot_type = input.select_plot()
       if plot_type == "Daily (Time-Series)":
-         return daily(df().loc[input.select_patient_plot()])
+         daily_events = events_ref.get() if input.daily_events_switch() else None
+         return daily_plot(df(), input.select_patient_plot(), input.plot_height_slider(), daily_events, app=True)
       elif plot_type == "Weekly (Time-Series)":
          return weekly_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
       elif plot_type == "Spaghetti":
