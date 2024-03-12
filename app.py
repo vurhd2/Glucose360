@@ -43,7 +43,7 @@ app_ui = ui.page_fluid(
          "Plots",
          ui.layout_columns(
             ui.output_ui("patient_plot"),
-            ui.input_select("select_plot", "Select Plot:", ["Daily (Time-series)", "Spaghetti", "AGP"]),
+            ui.input_select("select_plot", "Select Plot:", ["Daily (Time-Series)", "Weekly (Time-Series)", "Spaghetti", "AGP"]),
             ui.output_ui("plot_settings"),
             ui.output_ui("plot_height")
          ),
@@ -121,7 +121,7 @@ def server(input, output, session):
       data["Day"] = data[TIME].dt.date
       days = data["Day"].astype(str).unique().tolist()
 
-      fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.9,0.3] if show_events else None,
+      fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.66,0.34] if show_events else None,
                           specs=[[{"type":"scatter"}, {"type":"table"}] for i in range(len(days))] if show_events else None,
                           horizontal_spacing=0.01 if show_events else None)
       row = 1
@@ -137,17 +137,19 @@ def server(input, output, session):
 
          if show_events:
             day_events = events[(events[TIME].dt.date == day) & (events["id"] == id)].sort_values(TIME)
-            table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events[TYPE].tolist(), day_events[DESCRIPTION].tolist()]
+            table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events[DESCRIPTION].tolist()]
             if day_events.shape[0] != 0:
                fig.add_trace(
                   go.Table(
-                     columnwidth=[20,30,40],
+                     columnwidth=[10,40],
                      header=dict(
-                        values = [["<b>Time</b>"], ["<b>Type</b>"], ["<b>Description</b>"]]
+                        values = [["<b>Time</b>"], ["<b>Description</b>"]],
+                        font=dict(size=11)
                      ),
                      cells=dict(
                         values=table_body,
-                        align=['left', 'left', 'left']
+                        align=['left', 'left'],
+                        font=dict(size=10),
                      )
                   ), row=row, col=2
                )
@@ -185,11 +187,9 @@ def server(input, output, session):
          offset_after = pd.Timedelta(hours=1, minutes=23)
          fig.update_xaxes(range=[pd.Timestamp(days[0]) - offset_before, pd.Timestamp(days[1]) + offset_after], row=1, col=1)
          fig.update_xaxes(range=[pd.Timestamp(days[-1]) - offset_before, (pd.Timestamp(days[-1]) + pd.Timedelta(days=1)) + offset_after], row=len(days), col=1)
-      fig.update_yaxes(range=[np.min(data[GLUCOSE]) - 10, np.max(data[GLUCOSE]) + 10])
+      fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
 
-      #fig.update_layout(height=3000 if show_events else 1500)
-      fig.update_layout(height=input.plot_height_slider(), showlegend=(not show_events))
-      #fig.write_image("your_image.pdf", engine="kaleido")
+      fig.update_layout(title=f"Daily Plot for {id}", height=input.plot_height_slider(), showlegend=(not show_events))
       return fig
 
    @render.ui
@@ -206,7 +206,11 @@ def server(input, output, session):
       min = 750
       height = 3000
       max = 4000
-      if plot_type == "Spaghetti": 
+      if plot_type == "Weekly (Time-Series)":
+         min = 500
+         height = 750
+         max = 2000
+      elif plot_type == "Spaghetti": 
          min = 250
          height = 600
          max = 750
@@ -220,7 +224,7 @@ def server(input, output, session):
    @render.ui
    def plot_settings():
       plot_type = input.select_plot()
-      if plot_type == "Daily (Time-series)":
+      if plot_type == "Daily (Time-Series)":
          events_on = input.daily_events_switch() if "daily_events_switch" in input else False
          return ui.input_switch("daily_events_switch", "Show Events", value=events_on)
       elif plot_type == "Spaghetti":
@@ -230,8 +234,10 @@ def server(input, output, session):
    @render_widget
    def plot():
       plot_type = input.select_plot()
-      if plot_type == "Daily (Time-series)":
+      if plot_type == "Daily (Time-Series)":
          return daily(df().loc[input.select_patient_plot()])
+      elif plot_type == "Weekly (Time-Series)":
+         return weekly_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
       elif plot_type == "Spaghetti":
          return spaghetti_plot(df(), input.select_patient_plot(), input.spaghetti_chunk_switch(), input.plot_height_slider(), app=True)
       else:

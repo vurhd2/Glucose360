@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import seaborn as sns
 import preprocessing as pp
 import matplotlib.pyplot as plt
@@ -134,12 +135,62 @@ def event_plot(event_data: pd.DataFrame, event: pd.Series):
     plt.ylim(35, 405)
     plt.show()
 
+def weekly_plot_all(df: pd.DataFrame, height: int = 1000):
+   """
+   Displays Weekly (Time-Series) Plots for each patient in the given DataFrame
+   @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+   @param height    the height of the resulting plot (in pixels)
+   """
+   for id, data in df.groupby('id'):
+      weekly_plot(data, id, height)
+
+def weekly_plot(df: pd.DataFrame, id: str, height: int = 1000, app = False):
+   """
+   Displays a Weekly (Time-Series) Plot for only the given patient in the DataFrame
+   @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+   @param id        the id of the single patient whose data is being graphed
+   @param height    the height of the resulting plot (in pixels)
+   @param app       a boolean indicating whether this function is being run within the web app or not
+   """
+   data = df.loc[id].reset_index().copy()
+   data.set_index(TIME, inplace=True)
+
+   weekly_data = data.groupby(pd.Grouper(freq='W'))
+   weekly_dfs = [group for _, group in weekly_data]
+   
+   fig = make_subplots(rows=len(weekly_dfs), cols=1)
+   for week_index in range(len(weekly_dfs)):
+      week = weekly_dfs[week_index].reset_index()
+      fig.add_trace(
+         go.Scatter(
+               x=week[TIME],
+               y=week[GLUCOSE],
+               mode='lines+markers',
+         ), row=(week_index+1), col=1
+      )
+   
+   if len(weekly_dfs) > 1:
+      offset_before = pd.Timedelta(hours=10)
+      offset_after = pd.Timedelta(hours=10)
+      first_end = pd.Timestamp(weekly_dfs[1].reset_index()[TIME].dt.date.iloc[0])
+      first_start = first_end - pd.Timedelta(weeks=1)
+      last_start = pd.Timestamp(weekly_dfs[-1].reset_index()[TIME].dt.date.iloc[0])
+      last_end = last_start + pd.Timedelta(weeks=1)
+      fig.update_xaxes(range=[first_start - offset_before, first_end + offset_after], row=1, col=1)
+      fig.update_xaxes(range=[last_start - offset_before, last_end + offset_after], row=len(weekly_dfs), col=1)
+   fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
+
+   fig.update_layout(title=f"Weekly Plot for {id}", height=height, showlegend=False)
+
+   if app: return fig
+   fig.show()
+
 def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, height: int = 600):
     """
     Sequentially produces spaghetti plots for all the given patients
     @param df         a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
     @param chunk_day  a boolean indicating whether to split weekdays and weekends
-    @param height     the height (in pixels) of the resulting graph
+    @param height     the height of the resulting plot (in pixels)
     """
     for id, data in df.groupby("id"):
         spaghetti_plot(data, id, chunk_day, height)
@@ -149,10 +200,11 @@ def spaghetti_plot(
 ):
     """
     Graphs a spaghetti plot for the given patient
-    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-    @param id   the id of the patient whose data should be plotted
-    @param chunk_day  a boolean indicating whether to split weekdays and weekends
-    @param save a boolean indicating whether to download the graphs locally
+    @param df           a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
+    @param id           the id of the patient whose data should be plotted
+    @param chunk_day    a boolean indicating whether to split weekdays and weekends
+    @param height       the height of the resulting plot (in pixels)
+    @param app          a boolean indicating whether this function is being run within the web app or not
     """
     data = df.loc[id]
     data["Day"] = data[TIME].dt.date
@@ -168,9 +220,9 @@ def spaghetti_plot(
 
 def AGP_plot_all(df: pd.DataFrame, height: int = 600):
     """
-    Displays (and possibly saves) AGP Plots for each patient in the given DataFrame
-    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-    @param save a boolean indicating whether to download the graphs locally
+    Displays AGP Plots for each patient in the given DataFrame
+    @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+    @param height    the height of the resulting plot (in pixels)
     """
     for id, data in df.groupby("id"):
         AGP_plot(data, id, height)
@@ -178,10 +230,11 @@ def AGP_plot_all(df: pd.DataFrame, height: int = 600):
 
 def AGP_plot(df: pd.DataFrame, id: str, height: int = 600, app=False):
     """
-    Displays (and possibly saves) an AGP Plot for only the given patient in the DataFrame
-    @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-    @param id   the id of the single patient whose data is being graphed
-    @param save a boolean indicating whether to download the graphs locally
+    Displays an AGP Plot for only the given patient in the DataFrame
+    @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+    @param id        the id of the single patient whose data is being graphed
+    @param height    the height of the resulting plot (in pixels)
+    @param app       a boolean indicating whether this function is being run within the web app or not
     """
     if INTERVAL > 5:
          raise Exception("Data needs to have measurement intervals at most 5 minutes long")
