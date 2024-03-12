@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from scipy.integrate import trapezoid
 import configparser
-import glob, os
+import glob, os, zipfile, tempfile
 import math
 
 config = configparser.ConfigParser()
@@ -19,6 +19,7 @@ DESCRIPTION = "Description"
 def import_events(
    path: str, 
    id: str,
+   name: str = None,
    day_col: str = "Day",
    time_col: str = "Time",
    before: int = 60,
@@ -35,24 +36,59 @@ def import_events(
    @param after      the amount of minutes to also look at after the event timestamp
    @param type       the type of event all the imported events are
    """
-   if not os.path.isdir(path):
-      raise ValueError("Directory does not exist")
+   ext = os.path.splitext(path)[1]
 
-   csv_files = glob.glob(path + "/*.csv")
+   # path leads to directory
+   if ext == "":
+      if not os.path.isdir(path):
+         raise ValueError("Directory does not exist")
+      else:
+         return import_events_directory(path, id, day_col, time_col, before, after, type)
+   
+   # check if path leads to .zip or .csv
+   if ext.lower() in [".csv", ".zip"]:
+      if not os.path.isfile(path):
+         raise ValueError("File does not exist")
+   else:
+      raise ValueError("Invalid file type")
 
-   if len(csv_files) == 0:
-      raise Exception("No .csv files found when importing events.")
+   # path leads to .csv
+   if ext.lower() == ".csv":
+      return import_events_csv(path, id, day_col, time_col, before, after, type)
 
-   events = pd.concat(import_events_helper(file, day_col, time_col, before, after, type) for file in csv_files)
-   events.insert(0, 'id', id)
-   events[DESCRIPTION] = "imported event #" + (events.index + 1).astype(str)
+   # otherwise has to be a .zip file
+   with zipfile.ZipFile(path, 'r') as zip_ref:
+   # create a temporary directory to pull from
+      with tempfile.TemporaryDirectory() as temp_dir:
+         zip_ref.extractall(temp_dir)
+         dir = name or path.split("/")[-1].split(".")[0]
+         return import_events_directory((temp_dir + "/" + dir), id, day_col, time_col, before, after, type)
 
-   print(f"{len(csv_files)} .csv files were found in the specified directory.")
+def import_events_directory(
+   path: str,
+   id: str,
+   day_col: str = "Day",
+   time_col: str = "Time",
+   before: int = 60,
+   after: int = 60,
+   type: str = "imported event"
+) -> pd.DataFrame:
+    """
+    Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
+    The DataFrame holds columns for DateTime and Glucose Value, and is indexed by 'id'
+    @param path    the path of the directory to be parsed through
+    @param glucose_col   the header of the column containing the glucose values
+    """
+    csv_files = glob.glob(path + "/*.csv")
 
-   return events
+    if len(csv_files) == 0:
+       raise Exception("No CSV files found.")
 
-def import_events_helper(
-   path: str, 
+    return pd.concat(import_events_csv(file, id, day_col, time_col, before, after, type) for file in csv_files)
+
+def import_events_csv(
+   path: str,
+   id: str,
    day_col: str = "Day",
    time_col: str = "Time",
    before: int = 60,
@@ -70,12 +106,15 @@ def import_events_helper(
    @param type       the type of event all the imported events are
    """
    df = pd.read_csv(path)
+   csv_name = os.path.splitext(path)[0]
 
    events = pd.DataFrame()
    events[TIME] = pd.to_datetime(df[day_col] + " " + df[time_col])
    events[BEFORE] = before
    events[AFTER] = after
    events[TYPE] = type
+   events[DESCRIPTION] = df["Food Name"] if "Food Name" in df.columns else ("imported event #" + (events.index + 1).astype(str) + f"from {csv_name}")
+   events.insert(0, 'id', id)
 
    return events.dropna(subset=[TIME])
 
@@ -284,7 +323,7 @@ def create_event_features(
    return create_features(event_data, events=True)
 
 def event_summary(events: pd.DataFrame) -> pd.Series:
-   return events[type].value_counts()
+   return events[TYPE].value_counts()
 
 def episode_statistics(
    df: pd.DataFrame,
@@ -336,9 +375,9 @@ def episode_statistics(
 def AUC(df: pd.DataFrame) -> float:
     return trapezoid(df[GLUCOSE], dx=INTERVAL)
 
-def iAUC(df: pd.DataFrame, level = float, flip=False) -> float:
+def iAUC(df: pd.DataFrame, level = float) -> float:
     data = df.copy()
-    data[GLUCOSE] = (data[GLUCOSE] - level) if not flip else (level - data[GLUCOSE])
+    data[GLUCOSE] = abs(data[GLUCOSE] - level)
     data.loc[data[GLUCOSE] < 0, GLUCOSE] = 0
     return AUC(data)
 
@@ -365,9 +404,9 @@ def excursion_statistics(
    upper = mean + (2 * sd)
    lower = mean - (2 * sd)
 
-   hypo_excursions = events[events[type] == "hypo excursion"].copy()
+   hypo_excursions = events[events[TYPE] == "hypo excursion"].copy()
    num_hypo_excursions = hypo_excursions.shape[0]
-   hyper_excursions = events[events[type] == "hyper excursion"].copy()
+   hyper_excursions = events[events[TYPE] == "hyper excursion"].copy()
    num_hyper_excursions = hyper_excursions.shape[0]
    hypo_data = retrieve_event_data(df, hypo_excursions)
    hyper_data = retrieve_event_data(df, hyper_excursions)
@@ -383,7 +422,7 @@ def excursion_statistics(
    mean_hypo_downwards = 0
    if num_hypo_excursions != 0:
       for description, hypo_excursion in hypo_data.groupby(DESCRIPTION):
-         mean_hypo_iAUC += iAUC(hypo_excursion, level=lower, flip=True)
+         mean_hypo_iAUC += iAUC(hypo_excursion, level=lower)
          nadir = np.min(hypo_excursion[GLUCOSE]); mean_hypo_nadir += nadir
          delta = abs(lower - nadir); mean_hypo_delta += delta
 
@@ -447,3 +486,24 @@ def event_statistics(
    
    statistics.set_index('id', inplace=True)
    return statistics
+
+def event_metrics(
+   df: pd.DataFrame,
+   event: pd.Series
+) -> pd.DataFrame:
+   id = event["id"]
+
+   datetime = pd.Timestamp(event[TIME])
+   initial = datetime - pd.Timedelta(event[BEFORE], "m")
+   final = datetime + pd.Timedelta(event[AFTER], "m")
+
+   patient_data = df.loc[id]
+   data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy()
+
+   metrics = pd.Series()
+   metrics["Baseline"] = baseline(data)
+   metrics["Peak"] = peak(data)
+   metrics["Delta"] = delta(data)
+   metrics["iAUC"] = iAUC(data, baseline(data))
+
+   return metrics.to_frame().T
