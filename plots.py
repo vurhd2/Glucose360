@@ -186,6 +186,7 @@ def weekly_plot(df: pd.DataFrame, id: str, height: int = 1000, app = False):
       fig.update_xaxes(range=[first_start - offset_before, first_end + offset_after], row=1, col=1)
       fig.update_xaxes(range=[last_start - offset_before, last_end + offset_after], row=len(weekly_dfs), col=1)
    fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
+   fig.update_xaxes(tickformat="%B %d, %Y <br> (%a)")
 
    fig.update_layout(title=f"Weekly Plot for {id}", height=height, showlegend=False)
 
