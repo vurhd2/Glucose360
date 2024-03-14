@@ -116,7 +116,7 @@ def daily_plot(
    fig.show()
 
 def event_plot_all(df: pd.DataFrame, id: str, events: pd.DataFrame, type: str):
-    relevant_events = events[events[TYPE] == type]
+    relevant_events = events[(events["id"] == id) & (events[TYPE] == type)]
     for index, event in relevant_events.iterrows():
         event_plot(df, id, event, relevant_events)
 
@@ -138,7 +138,7 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
                name=str(day)
          )
       )
-   fig = go.Figure(data=subplot_figs, layout=go.Layout(title='Event Plot'))
+   fig = go.Figure(data=subplot_figs, layout=go.Layout(title=f"Event Plot for {id}"))
 
    if events is not None:
       event_data = events[events["id"] == id] if events is not None else None
