@@ -1,4 +1,5 @@
 import pandas as pd
+from preprocessing import get_interval
 import numpy as np
 from scipy.integrate import trapezoid
 import configparser
@@ -7,14 +8,13 @@ import math
 
 config = configparser.ConfigParser()
 config.read('config.ini')
+ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
-INTERVAL = config['variables'].getint('interval')
-
-BEFORE = "Before"
-AFTER = "After"
-TYPE = "Type"
-DESCRIPTION = "Description"
+BEFORE = config['variables']['before']
+AFTER = config['variables']['after']
+TYPE = config['variables']['type']
+DESCRIPTION = config['variables']['description']
 
 def import_events(
    path: str, 
@@ -114,7 +114,7 @@ def import_events_csv(
    events[AFTER] = after
    events[TYPE] = type
    events[DESCRIPTION] = df["Food Name"] if "Food Name" in df.columns else ("imported event #" + (events.index + 1).astype(str) + f"from {csv_name}")
-   events.insert(0, 'id', id)
+   events.insert(0, ID, id)
 
    return events.dropna(subset=[TIME])
 
@@ -127,6 +127,7 @@ def episodes_helper(
    min_length: int, 
    end_length: int
 ) -> pd.DataFrame:
+   interval = get_interval()
    timegap = lambda timedelta: timedelta.total_seconds() / 60
    episodes = pd.DataFrame()
 
@@ -135,7 +136,7 @@ def episodes_helper(
    episode_df.reset_index(drop=True, inplace=True)
    episode_df["gap"] = episode_df[TIME].diff().apply(timegap)
 
-   edges = episode_df.index[episode_df["gap"] != INTERVAL].to_list()
+   edges = episode_df.index[episode_df["gap"] != interval].to_list()
    edges.append(-1)
 
    get = lambda loc, col: episode_df.iloc[loc][col]
@@ -150,7 +151,7 @@ def episodes_helper(
 
       if episode_length >= min_length: # check if episode lasts longer than 15 min
          if offset != 0: # not the very last episode
-            end_counts = math.ceil(end_length / INTERVAL)
+            end_counts = math.ceil(end_length / interval)
             
             end_index = data.index[data[TIME] == end_time].to_list()[0]
             end_data = data.iloc[end_index + 1 : end_index + 1 + end_counts][GLUCOSE]
@@ -160,7 +161,7 @@ def episodes_helper(
                continue
 
          description = f"{start_time} to {end_time} level {level} {type}glycemic episode"
-         event = pd.DataFrame.from_records([{"id": id, TIME: start_time, BEFORE: 0, AFTER: episode_length, 
+         event = pd.DataFrame.from_records([{ID: id, TIME: start_time, BEFORE: 0, AFTER: episode_length, 
                                              TYPE: f"{type} level {level} episode", DESCRIPTION: description}])
          episodes = pd.concat([episodes, event]) 
       
@@ -170,19 +171,19 @@ def episodes_helper(
 
 def get_episodes(
     df: pd.DataFrame,
-    hypo_lvl1: int = 70,
-    hypo_lvl2: int = 54,
-    hyper_lvl1: int = 180,
-    hyper_lvl2: int = 250,
+    hypo_lvl1: int = 54,
+    hyper_lvl0: int = 120,
+    hyper_lvl1: int = 140,
+    hyper_lvl2: int = 180,
     min_length: int = 15,
     end_length: int = 15
 ) -> pd.DataFrame:
    output = pd.DataFrame()
-   for id, data in df.groupby('id'):
-      episodes = pd.concat([episodes_helper(data, id, "hyper", hyper_lvl1, 1, min_length, end_length),
+   for id, data in df.groupby(ID):
+      episodes = pd.concat([episodes_helper(data, id, "hyper", hyper_lvl0, 0, min_length, end_length),
+                            episodes_helper(data, id, "hyper", hyper_lvl1, 1, min_length, end_length),
                             episodes_helper(data, id, "hyper", hyper_lvl2, 2, min_length, end_length),
-                            episodes_helper(data, id, "hypo", hypo_lvl1, 1, min_length, end_length),
-                            episodes_helper(data, id, "hypo", hypo_lvl2, 2, min_length, end_length)])
+                            episodes_helper(data, id, "hypo", hypo_lvl1, 1, min_length, end_length)])
       
       episodes.sort_values(by=[TIME], inplace=True)
       output = pd.concat([output, episodes])
@@ -196,7 +197,8 @@ def get_excursions(
    end_length: int = 15
 ) -> pd.DataFrame:
    excursions = pd.DataFrame()
-   for id, data in df.groupby('id'):
+   interval = get_interval()
+   for id, data in df.groupby(ID):
       sd = data[GLUCOSE].std()
       mean = data[GLUCOSE].mean()
       upper = mean + (z * sd)
@@ -214,7 +216,7 @@ def get_excursions(
       timegap = lambda timedelta: timedelta.total_seconds() / 60
       outliers["gaps"] = outliers[TIME].diff().apply(timegap)
 
-      edges = outliers.index[outliers["gaps"] != INTERVAL].to_list()
+      edges = outliers.index[outliers["gaps"] != interval].to_list()
       edges.append(-1)
       i = 0
       while i < len(edges) - 1:
@@ -228,7 +230,7 @@ def get_excursions(
          excursion_length = timegap(end_time - start_time)
          if excursion_length >= min_length:
             if offset != 0: # not the very last episode
-               end_counts = math.ceil(end_length / INTERVAL)
+               end_counts = math.ceil(end_length / interval)
                
                last_index = data.reset_index().index[data[TIME] == end_time].to_list()[0]
                last_data = data.iloc[last_index + 1 : last_index + 1 + end_counts][GLUCOSE]
@@ -249,7 +251,7 @@ def get_excursions(
                end_time = extrema[extrema >= end_time].iloc[0]
             
             description = f"{start_time} to {end_time} {type}glycemic excursion"
-            event = pd.DataFrame.from_records([{"id": id, TIME: timestamp, BEFORE: timegap(timestamp - start_time), 
+            event = pd.DataFrame.from_records([{ID: id, TIME: timestamp, BEFORE: timegap(timestamp - start_time), 
                                                 AFTER: timegap(end_time - timestamp), 
                                                 TYPE: f"{type} excursion", DESCRIPTION: description}])
             excursions = pd.concat([excursions, event])
@@ -260,16 +262,16 @@ def get_excursions(
 
 def backwards_ROC(df: pd.DataFrame) -> pd.Series:
    data = df.copy().reset_index(drop=True).set_index(TIME)
-   return ((3 * data[GLUCOSE]) - (4 * data[GLUCOSE].shift()) + data[GLUCOSE].shift(2)) / (2 * INTERVAL)
+   return ((3 * data[GLUCOSE]) - (4 * data[GLUCOSE].shift()) + data[GLUCOSE].shift(2)) / (2 * get_interval())
 
 def get_meals(df: pd.DataFrame, threshold: float, cooldown: int = 20) -> pd.DataFrame:
    meals = pd.DataFrame()
-   for id, data in df.groupby('id'):
+   for id, data in df.groupby(ID):
       roc = backwards_ROC(data)
       meal_times = roc[roc >= threshold].index.tolist()
       for time in meal_times:
          if meals.shape[0] == 0 or ((time - meals[TIME].iloc[-1]) >= pd.Timedelta(minutes = cooldown)):
-            meal = pd.DataFrame.from_records([{"id": id, TIME: time, BEFORE: 0, AFTER: 0, 
+            meal = pd.DataFrame.from_records([{ID: id, TIME: time, BEFORE: 0, AFTER: 0, 
                                                       TYPE: "meal", DESCRIPTION: f"meal occurring at {time}"}])
             meals = pd.concat([meals, meal])
    return meals
@@ -290,7 +292,7 @@ def retrieve_event_data(
     event_data = pd.DataFrame()
 
     for index, row in events.iterrows():
-        id = row["id"]
+        id = row[ID]
 
         datetime = pd.Timestamp(row[TIME])
         initial = datetime - pd.Timedelta(row[BEFORE], "m")
@@ -299,7 +301,7 @@ def retrieve_event_data(
         patient_data = df.loc[id]
         data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy()
 
-        data["id"] = id
+        data[ID] = id
         data[DESCRIPTION] = row[DESCRIPTION]
 
         event_data = pd.concat([event_data, data])
@@ -373,7 +375,7 @@ def episode_statistics(
                                       "mean hyperglycemic glucose value (level 1) per day": hyper_mean_glucose,}])
 
 def AUC(df: pd.DataFrame) -> float:
-    return trapezoid(df[GLUCOSE], dx=INTERVAL)
+    return trapezoid(df[GLUCOSE], dx=get_interval())
 
 def iAUC(df: pd.DataFrame, level = float) -> float:
     data = df.copy()
@@ -477,21 +479,21 @@ def event_statistics(
 ) -> pd.DataFrame:
    statistics = pd.DataFrame()
 
-   for id, data in df.groupby('id'):
-      patient = events[events['id'] == id]
-      stats = pd.concat([pd.DataFrame.from_records([{'id': id}]), 
+   for id, data in df.groupby(ID):
+      patient = events[events[ID] == id]
+      stats = pd.concat([pd.DataFrame.from_records([{ID: id}]), 
                          episode_statistics(data, patient, id),
                          excursion_statistics(data, patient, id)], axis=1)
       statistics = pd.concat([statistics, stats])
    
-   statistics.set_index('id', inplace=True)
+   statistics.set_index(ID, inplace=True)
    return statistics
 
 def event_metrics(
    df: pd.DataFrame,
    event: pd.Series
 ) -> pd.DataFrame:
-   id = event["id"]
+   id = event[ID]
 
    datetime = pd.Timestamp(event[TIME])
    initial = datetime - pd.Timedelta(event[BEFORE], "m")

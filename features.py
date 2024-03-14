@@ -1,15 +1,26 @@
 import pandas as pd
 import numpy as np
 import configparser
+from preprocessing import get_interval
 
 config = configparser.ConfigParser()
 config.read('config.ini')
+ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
-INTERVAL = config['variables'].getint('interval')
+
+"""
+All of the metric-calculating functions are designed for DataFrames that contain only one patient's data.
+For example, if 'df' is the outputted DataFrame from 'import_data()', 'LBGI(df)' would not be accurate.
+Instead, do 'LBGI(df.loc[PATIENT_ID])'.
+"""
 
 def mean(df: pd.DataFrame) -> float:
-    return df[GLUCOSE].mean()
+   """
+   Calculates the mean
+   @param df   the Pandas DataFrame containing 
+   """
+   return df[GLUCOSE].mean()
 
 def summary_stats(df: pd.DataFrame) -> list:
     min = df[GLUCOSE].min()
@@ -137,14 +148,14 @@ def j_index(df: pd.DataFrame) -> float:
     return 0.001 * ((mean(df) + std(df)) ** 2)
 
 # n is the gap in hours
-# INTERVAL should be in minutes
+# the resampling interval should be in minutes
 def CONGA(df: pd.DataFrame, n: int = 24) -> float:
-    period = n * (60 / INTERVAL)
+    period = n * (60 / get_interval())
     return np.std(df[GLUCOSE].diff(periods=period))
 
 # lag is in days
 def MODD(df: pd.DataFrame, lag: int = 1) -> float:
-    period = lag * 24 * (60 / INTERVAL)
+    period = lag * 24 * (60 / get_interval())
     return np.mean(np.abs(df[GLUCOSE].diff(periods=period)))
 
 def mean_absolute_differences(df: pd.DataFrame) -> float:
@@ -167,7 +178,7 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 
    # group by the created groups and count the size of each group, then apply it where values are missing
    size_of_groups = data.groupby([groups, missing])[GLUCOSE].transform('size').where(missing, 0)
    # filter groups where size is greater than 0 and take their indexes
-   indexes = size_of_groups[size_of_groups.diff() > (max_gap / INTERVAL)].index.tolist()
+   indexes = size_of_groups[size_of_groups.diff() > (max_gap / get_interval())].index.tolist()
 
    if not indexes: # no gaps in data larger than max_gap
       return MAGE_helper(df, short_ma, long_ma)
@@ -218,7 +229,6 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
             crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])
 
    crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": None, "type": np.where(average(-1) > 0, "peak", "nadir")}])])     
-   # CHECK LATER TO MAKE SURE THIS ISNT NECESSARY: crosses.dropna(inplace=True) 
 
    num_extrema = crosses.shape[0] -  1
    minmax = np.tile(np.nan, num_extrema)
@@ -293,10 +303,11 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
    return float(np.where(plus_first, np.mean(mage_plus_heights), np.mean(mage_minus_heights.abs())))
 
 def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.DataFrame:
-   if timedelta < INTERVAL:
+   interval = get_interval()
+   if timedelta < interval:
       raise Exception("Given timedelta must be greater than resampling interval.")
 
-   positiondelta = round(timedelta / INTERVAL)
+   positiondelta = round(timedelta / interval)
    return df[GLUCOSE].diff(periods=positiondelta) / timedelta
 
 """
@@ -306,10 +317,10 @@ returns a single indexed Pandas DataFrame containing summary metrics in the form
 def create_features(dataset: pd.DataFrame) -> pd.DataFrame:
     df = pd.DataFrame()
 
-    for id, data in dataset.groupby("id"):
+    for id, data in dataset.groupby(ID):
         features = {}
         summary = summary_stats(data)
-        features["id"] = id
+        features[ID] = id
 
         features["mean"] = mean(data)
         features["min"] = summary[0]
@@ -324,7 +335,7 @@ def create_features(dataset: pd.DataFrame) -> pd.DataFrame:
         features["mean absolute differences"] = mean_absolute_differences(data)
         features["median absolute deviation"] = median_absolute_deviation(data)
 
-        features["a1c"] = a1c(data)
+        features["eA1C"] = a1c(data)
         features["gmi"] = gmi(data)
         features["percent time in range"] = percent_time_in_range(data)
         features["ADRR"] = ADRR(data)
@@ -352,6 +363,6 @@ def create_features(dataset: pd.DataFrame) -> pd.DataFrame:
 
         df = pd.concat([df, pd.DataFrame.from_records([features])])
 
-    df = df.set_index(["id"])
+    df = df.set_index([ID])
 
     return df

@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
-import seaborn as sns
 import preprocessing as pp
-import matplotlib.pyplot as plt
 import configparser
 import json
 
@@ -10,19 +8,15 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
-from events import retrieve_event_data
-
-import plotly.tools as tls
-
 config = configparser.ConfigParser()
 config.read('config.ini')
+ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
-INTERVAL = config['variables'].getint('interval')
-BEFORE = "Before"
-AFTER = "After"
-TYPE = "Type"
-DESCRIPTION = "Description"
+BEFORE = config['variables']['before']
+AFTER = config['variables']['after']
+TYPE = config['variables']['type']
+DESCRIPTION = config['variables']['description']
 
 def daily_plot_all(
     df: pd.DataFrame,
@@ -35,7 +29,7 @@ def daily_plot_all(
     @param events     a DataFrame containing event timeframes for some (or all) of the given patients
     @param height
     """
-    for id, data in df.groupby("id"):
+    for id, data in df.groupby(ID):
         daily_plot(data, id, height, events)
 
 def daily_plot(
@@ -61,13 +55,15 @@ def daily_plot(
                         specs=[[{"type":"scatter"}, {"type":"table"}] for i in range(len(days))] if show_events else None,
                         horizontal_spacing=0.01 if show_events else None)
    row = 1
+   row_height = 0
    for day, dataset in data.groupby("Day"):
       fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day)), row=row, col=1)
 
       if show_events:
          events[TIME] = pd.to_datetime(events[TIME])
-         day_events = events[(events[TIME].dt.date == day) & (events["id"] == id)].sort_values(TIME)
+         day_events = events[(events[TIME].dt.date == day) & (events[ID] == id)].sort_values(TIME)
          table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events["Description"].tolist()]
+         row_height = max(row_height, day_events.shape[0])
          if day_events.shape[0] != 0:
             fig.add_trace(
                go.Table(
@@ -80,7 +76,7 @@ def daily_plot(
 
    if show_events:
       if isinstance(events, pd.DataFrame):
-         event_data = events[events["id"] == id] if events is not None else None
+         event_data = events[events[ID] == id] if events is not None else None
          if event_data is not None:
             event_types = event_data['Type'].unique()
             with open('event_colors.json') as colors_file:
@@ -98,7 +94,7 @@ def daily_plot(
                      y1=1,
                      line=dict(color=color_map[row['Type']], width=3)), row=r, col=1)
                   fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], row=r, col=1, showarrow=False)
-      elif events["id"] == id:
+      elif events[ID] == id:
          day = str(events[TIME].dt.date)
          fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
          fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
@@ -116,12 +112,28 @@ def daily_plot(
    fig.show()
 
 def event_plot_all(df: pd.DataFrame, id: str, events: pd.DataFrame, type: str):
-    relevant_events = events[(events["id"] == id) & (events[TYPE] == type)]
+    """
+    Displays plots for all events of the given type for the given patient
+    @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+    @param id        the 'id' of the patient for whom the event plots should be graphed
+    @param events    a DataFrame containing event timeframes as per the usual structure
+    @param type      the type of events for which plots should be generated     
+    """
+    relevant_events = events[(events[ID] == id) & (events[TYPE] == type)]
     for index, event in relevant_events.iterrows():
         event_plot(df, id, event, relevant_events)
 
 def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame = None, app: bool = False):
-   if event["id"] != id: raise Exception("Given event does not match the 'id' given.")
+   """
+   Generates a single event plot for the given patient and event
+   @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
+   @param id        the 'id' of the patient for whom the event plot should be graphed
+   @param event     a Pandas Series containing the event that should be plotted
+   @param events    a DataFrame containing event timeframes as per the usual structure
+                    (optional, if passed will just display vertical lines for all relevant events too)
+   @param app       if this function is being run through the web app (should not be touched by users)     
+   """
+   if event[ID] != id: raise Exception("Given event does not match the 'id' given.")
    data = df.loc[id].copy()
    event[TIME] = pd.to_datetime(event[TIME])
    before = event[TIME] - pd.Timedelta(minutes=event[BEFORE])
@@ -141,7 +153,7 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
    fig = go.Figure(data=subplot_figs, layout=go.Layout(title=f"Event Plot for {id}"))
 
    if events is not None:
-      event_data = events[events["id"] == id] if events is not None else None
+      event_data = events[events[ID] == id] if events is not None else None
       if event_data is not None:
          event_types = event_data[TYPE].unique()
          with open('event_colors.json') as colors_file:
@@ -165,7 +177,7 @@ def weekly_plot_all(df: pd.DataFrame, height: int = 1000):
    @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
    @param height    the height of the resulting plot (in pixels)
    """
-   for id, data in df.groupby('id'):
+   for id, data in df.groupby(ID):
       weekly_plot(data, id, height)
 
 def weekly_plot(df: pd.DataFrame, id: str, height: int = 1000, app = False):
@@ -217,7 +229,7 @@ def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, height: int = 
     @param chunk_day  a boolean indicating whether to split weekdays and weekends
     @param height     the height of the resulting plot (in pixels)
     """
-    for id, data in df.groupby("id"):
+    for id, data in df.groupby(ID):
         spaghetti_plot(data, id, chunk_day, height)
 
 def spaghetti_plot(
@@ -249,7 +261,7 @@ def AGP_plot_all(df: pd.DataFrame, height: int = 600):
     @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
     @param height    the height of the resulting plot (in pixels)
     """
-    for id, data in df.groupby("id"):
+    for id, data in df.groupby(ID):
         AGP_plot(data, id, height)
 
 
@@ -261,7 +273,7 @@ def AGP_plot(df: pd.DataFrame, id: str, height: int = 600, app=False):
     @param height    the height of the resulting plot (in pixels)
     @param app       a boolean indicating whether this function is being run within the web app or not
     """
-    if INTERVAL > 5:
+    if pp.get_interval() > 5:
          raise Exception("Data needs to have measurement intervals at most 5 minutes long")
 
     data = df.loc[id]  
