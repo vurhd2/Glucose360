@@ -87,7 +87,7 @@ app_ui = ui.page_fluid(
                ui.input_switch("show_meals", "Show Meals", value=True),
                ui.output_data_frame("events_table")
             ),
-            ui.card(output_widget("event_plot"))
+            ui.card(output_widget("display_event_plot"))
          ),
       ),
       id="tab"
@@ -167,6 +167,7 @@ def server(input, output, session):
    
    @render.data_frame
    def features_table():
+      if df().shape[0] == 0: raise Exception("Please upload your CGM data above.")
       return render.DataGrid(create_features(df()).reset_index(names=["Patient"]))
    
    @reactive.Effect
@@ -214,51 +215,20 @@ def server(input, output, session):
    
    @render.data_frame
    def event_metrics_table():
+      if not input.events_table_selected_rows(): raise Exception("Select an event from the table to display relevant metrics.")
       filtered_events = filtered_events_ref.get()
       event = filtered_events[filtered_events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
       return render.DataGrid(event_metrics(df(), event.squeeze()))
 
    @render_widget
-   def event_plot():
-      id = input.select_patient_event()
-      data = df().loc[id]
-
+   def display_event_plot():
+      if not input.events_table_selected_rows(): 
+         empty = go.Figure(go.Scatter(x=pd.Series(), y=pd.Series(), mode="markers"))
+         empty.update_layout(title="Select an event from the table to display event plot.")
+         return empty
       filtered_events = filtered_events_ref.get()
-      event = filtered_events[filtered_events["id"] == id].iloc[list(input.events_table_selected_rows())]
-      event[TIME] = pd.to_datetime(event[TIME])
-      before = event[TIME].iloc[0] - pd.Timedelta(minutes=event[BEFORE].iloc[0])
-      after = event[TIME].iloc[0] + pd.Timedelta(minutes=event[AFTER].iloc[0])
-
-      subplot_figs = []
-      data["Day"] = data[TIME].dt.date
-      for day, dataset in data.groupby("Day"):
-         subplot_figs.append(
-            go.Scatter(
-                  x=dataset[TIME],
-                  y=dataset[GLUCOSE],
-                  mode='lines+markers',
-                  name=str(day)
-            )
-         )
-      fig = go.Figure(data=subplot_figs, layout=go.Layout(title='Daily (Time-Series) Plot'))
-
-      if isinstance(filtered_events, pd.DataFrame):
-         event_data = filtered_events[filtered_events["id"] == id] if filtered_events is not None else None
-         if event_data is not None:
-            event_types = event_data['Type'].unique()
-            with open('event_colors.json') as colors_file:
-               color_dict = json.load(colors_file)
-               colors = list(color_dict.values())
-               color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
-               for index, row in event_data.iterrows():
-                  fig.add_vline(x=pd.to_datetime(row[TIME]), line_dash="dash", line_color=color_map[row['Type']])
-                  fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], showarrow=False)
-
-      elif filtered_events["id"] == id:
-         fig.add_vline(x=pd.to_datetime(filtered_events[TIME]), line_dash="dash", line_color=color_map[filtered_events['Type']])
-         fig.add_annotation(yref="y domain", x=pd.to_datetime(filtered_events[TIME]), y=1, text=filtered_events['Type'], showarrow=False)
-
-      fig.update_xaxes(type="date", range=[before, after])
-      return fig
+      id = input.select_patient_event()
+      event = filtered_events[filtered_events["id"] == id].iloc[list(input.events_table_selected_rows())].squeeze()
+      return event_plot(df(), id, event, events_ref.get(), app=True)
 
 app = App(app_ui, server, debug=False)

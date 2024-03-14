@@ -19,6 +19,10 @@ config.read('config.ini')
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
 INTERVAL = config['variables'].getint('interval')
+BEFORE = "Before"
+AFTER = "After"
+TYPE = "Type"
+DESCRIPTION = "Description"
 
 def daily_plot_all(
     df: pd.DataFrame,
@@ -111,36 +115,49 @@ def daily_plot(
    if app: return fig
    fig.show()
 
-def event_plot_all(df: pd.DataFrame, events: pd.DataFrame):
-    sns.set_theme()
-    event_data = retrieve_event_data(df, events)
-    event_data.set_index('Description', inplace=True)
-    for desc, data in event_data.groupby('Description'):
-        event = events[events["Description"] == desc]
-        event_plot(data, event)
+def event_plot_all(df: pd.DataFrame, id: str, events: pd.DataFrame, type: str):
+    relevant_events = events[events[TYPE] == type]
+    for index, event in relevant_events.iterrows():
+        event_plot(df, id, event, relevant_events)
 
-def event_plot(event_data: pd.DataFrame, event: pd.Series):
-    pd.set_option('display.max_colwidth', None)
-    plot = sns.relplot(
-        data=event_data,
-        kind="line",
-        x=TIME,
-        y=GLUCOSE,
-    )
-    plot.figure.subplots_adjust(top=0.9)
-    plot.figure.suptitle(event['Description'].iloc[0])
-    plot.figure.set_size_inches(10, 6)
+def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame = None, app: bool = False):
+   if event["id"] != id: raise Exception("Given event does not match the 'id' given.")
+   data = df.loc[id].copy()
+   event[TIME] = pd.to_datetime(event[TIME])
+   before = event[TIME] - pd.Timedelta(minutes=event[BEFORE])
+   after = event[TIME] + pd.Timedelta(minutes=event[AFTER])
 
-    not_supported_event_types = ['hypo level 1 episode', 'hypo level 2 episode',
-                                 'hyper level 1 episode', 'hyper level 2 episode',
-                                 'hypo excursion', 'hyper excursion']
+   subplot_figs = []
+   data["Day"] = data[TIME].dt.date
+   for day, dataset in data.groupby("Day"):
+      subplot_figs.append(
+         go.Scatter(
+               x=dataset[TIME],
+               y=dataset[GLUCOSE],
+               mode='lines+markers',
+               name=str(day)
+         )
+      )
+   fig = go.Figure(data=subplot_figs, layout=go.Layout(title='Event Plot'))
 
-    if not (event['Type'].iloc[0] in not_supported_event_types):
-      plt.axvline(pd.to_datetime(event[TIME].iloc[0]), color="orange", label=event['Type'].iloc[0])
+   if events is not None:
+      event_data = events[events["id"] == id] if events is not None else None
+      if event_data is not None:
+         event_types = event_data[TYPE].unique()
+         with open('event_colors.json') as colors_file:
+            color_dict = json.load(colors_file)
+            colors = list(color_dict.values())
+            color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
+            for index, row in event_data.iterrows():
+               fig.add_vline(x=pd.to_datetime(row[TIME]), line_dash="dash", line_color=color_map[row[TYPE]])
+               fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row[TYPE], showarrow=False)
+   else:
+      fig.add_vline(x=pd.to_datetime(event[TIME]), line_dash="dash", line_color=color_map[event[TYPE]])
+      fig.add_annotation(yref="y domain", x=pd.to_datetime(event[TIME]), y=1, text=event[TYPE], showarrow=False)
 
-    plt.legend(loc='right', bbox_to_anchor=(1.0,1.05))
-    plt.ylim(35, 405)
-    plt.show()
+   fig.update_xaxes(type="date", range=[before, after])
+   if app: return fig
+   fig.show()
 
 def weekly_plot_all(df: pd.DataFrame, height: int = 1000):
    """
