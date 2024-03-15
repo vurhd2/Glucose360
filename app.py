@@ -1,12 +1,10 @@
-from preprocessing import import_data, resample_data
+from preprocessing import import_data
 from events import *
 from plots import *
 from features import create_features
 import pandas as pd
 import configparser
 
-import plotly.express as px
-from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
 from shiny import App, ui, render, reactive
@@ -15,14 +13,13 @@ from shinywidgets import output_widget, render_widget
 
 config = configparser.ConfigParser()
 config.read('config.ini')
+ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
-INTERVAL = config['variables'].getint('interval')
-
-BEFORE = "Before"
-AFTER = "After"
-TYPE = "Type"
-DESCRIPTION = "Description"
+BEFORE = config['variables']['before']
+AFTER = config['variables']['after']
+TYPE = config['variables']['type']
+DESCRIPTION = config['variables']['description']
 
 filtered_events = pd.DataFrame()
 
@@ -37,7 +34,10 @@ app_ui = ui.page_fluid(
             ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
             ui.input_file("data_import", "Import Dexcom CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False),
          ),
-         ui.card(ui.output_data_frame("features_table"))
+         ui.card(
+            ui.output_data_frame("features_table"),
+            ui.download_button("download_features", "Download Features as .csv file")
+         )
       ),
       ui.nav_panel(
          "Plots",
@@ -124,23 +124,28 @@ def server(input, output, session):
    @render.ui
    def plot_height():
       plot_type = input.select_plot()
-      min = 750
-      height = 3000
-      max = 4000
-      if plot_type == "Weekly (Time-Series)":
-         min = 500
-         height = 750
-         max = 2000
+      lower = 500
+      height = 750
+      upper = 2000
+      if plot_type == "Daily (Time-Series)":
+         lower = 750
+         height = 3000 
+         upper = 4000
+         if input.daily_events_switch() and (events_ref.get().shape[0] != 0): 
+            dates = events_ref.get()[TIME].dt.date
+            data = df()
+            height = max(height, (dates.value_counts().iloc[0] * 60 * data[data[ID] == input.select_patient_plot()][TIME].dt.date.unique().size))
+            upper = height
       elif plot_type == "Spaghetti": 
-         min = 250
+         lower = 250
          height = 600
-         max = 750
+         upper = 750
       elif plot_type == "AGP":
-         min = 600
-         max = 2000 
+         lower = 600
+         upper = 2000 
          height = 1000
 
-      return ui.input_slider("plot_height_slider", "Set Plot Height", min, max, height)
+      return ui.input_slider("plot_height_slider", "Set Plot Height", lower, upper, height)
 
    @render.ui
    def plot_settings():
@@ -170,6 +175,11 @@ def server(input, output, session):
       if df().shape[0] == 0: raise Exception("Please upload your CGM data above.")
       return render.DataGrid(create_features(df()).reset_index(names=["Patient"]))
    
+   @render.download(filename="features.csv")
+   def download_features():
+      if df().shape[0] == 0: raise Exception("Please upload your CGM data above.")
+      yield create_features(df()).reset_index(names=["Patient"]).to_csv()
+   
    @reactive.Effect
    @reactive.event(input.event_import)
    def bulk_import_events():
@@ -187,7 +197,7 @@ def server(input, output, session):
       show_meals = input.show_meals()
 
       events = events_ref.get()
-      data = events[events["id"] == input.select_patient_event()].copy()
+      data = events[events[ID] == input.select_patient_event()].copy()
       data[TIME] = data[TIME].astype(str)
 
       def filter(s):
@@ -197,13 +207,13 @@ def server(input, output, session):
          return True
 
       filtered_events_ref.set(data[data[TYPE].apply(filter)])
-      return render.DataGrid(filtered_events_ref.get().drop(columns=["id"]), row_selection_mode="single")
+      return render.DataGrid(filtered_events_ref.get().drop(columns=[ID]), row_selection_mode="single")
    
    @reactive.Effect
    @reactive.event(input.add_event_button)
    def add_event():
       added_event = pd.DataFrame.from_records({
-         "id": input.select_patient_event(),
+         ID: input.select_patient_event(),
          TIME: str(input.add_event_date()) + " " + input.add_event_time(),
          BEFORE: input.add_event_before(),
          AFTER: input.add_event_after(),
@@ -217,7 +227,7 @@ def server(input, output, session):
    def event_metrics_table():
       if not input.events_table_selected_rows(): raise Exception("Select an event from the table to display relevant metrics.")
       filtered_events = filtered_events_ref.get()
-      event = filtered_events[filtered_events["id"] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
+      event = filtered_events[filtered_events[ID] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
       return render.DataGrid(event_metrics(df(), event.squeeze()))
 
    @render_widget
@@ -228,7 +238,7 @@ def server(input, output, session):
          return empty
       filtered_events = filtered_events_ref.get()
       id = input.select_patient_event()
-      event = filtered_events[filtered_events["id"] == id].iloc[list(input.events_table_selected_rows())].squeeze()
+      event = filtered_events[filtered_events[ID] == id].iloc[list(input.events_table_selected_rows())].squeeze()
       return event_plot(df(), id, event, events_ref.get(), app=True)
 
 app = App(app_ui, server, debug=False)
