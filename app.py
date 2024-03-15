@@ -85,7 +85,8 @@ app_ui = ui.page_fluid(
                ui.input_switch("show_excursions", "Show Excursions", value=True),
                ui.input_switch("show_episodes", "Show Episodes", value=True),
                ui.input_switch("show_meals", "Show Meals", value=True),
-               ui.output_data_frame("events_table")
+               ui.output_data_frame("events_table"),
+               ui.download_button("download_events", "Download Events in Table as .csv file")
             ),
             ui.card(output_widget("display_event_plot"))
          ),
@@ -208,6 +209,11 @@ def server(input, output, session):
 
       filtered_events_ref.set(data[data[TYPE].apply(filter)])
       return render.DataGrid(filtered_events_ref.get().drop(columns=[ID]), row_selection_mode="single")
+   
+   @render.download(filename="events.csv")
+   def download_events():
+      filtered_events = filtered_events_ref.get()
+      yield filtered_events[filtered_events[ID] == input.select_patient_event()].to_csv()
    
    @reactive.Effect
    @reactive.event(input.add_event_button)
