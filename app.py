@@ -82,10 +82,10 @@ app_ui = ui.page_fluid(
          ),
          ui.layout_columns(
             ui.card(
-               ui.input_switch("show_excursions", "Show Excursions", value=True),
-               ui.input_switch("show_episodes", "Show Episodes", value=True),
-               ui.input_switch("show_meals", "Show Meals", value=True),
-               ui.output_data_frame("events_table"),
+               ui.layout_columns(
+                  ui.output_data_frame("event_filters"),
+                  ui.output_data_frame("events_table")
+               ),
                ui.download_button("download_events", "Download Events in Table as .csv file")
             ),
             ui.card(output_widget("display_event_plot"))
@@ -192,22 +192,25 @@ def server(input, output, session):
                                after=input.event_import_after(), type=input.event_type())]).reset_index(drop=True))
 
    @render.data_frame
-   def events_table():
-      show_episodes = input.show_episodes()
-      show_excursions = input.show_excursions()
-      show_meals = input.show_meals()
-
+   def event_filters():
       events = events_ref.get()
-      data = events[events[ID] == input.select_patient_event()].copy()
-      data[TIME] = data[TIME].astype(str)
+      events = events[events[ID] == input.select_patient_event()]
+      #table = pd.DataFrame(events[TYPE].unique())
+      table = pd.DataFrame(events.drop_duplicates(subset=[TYPE])[TYPE])
+      return render.DataGrid(table, row_selection_mode="multiple")
 
-      def filter(s):
-         if not show_episodes and 'episode' in s.lower(): return False
-         elif not show_excursions and 'excursion' in s.lower(): return False
-         elif not show_meals and 'meal' in s.lower(): return False
-         return True
+   @render.data_frame
+   def events_table():
+      events = events_ref.get()
+      events = events[(events[ID] == input.select_patient_event())]
 
-      filtered_events_ref.set(data[data[TYPE].apply(filter)])
+      filtered_events = events.copy()
+      if input.event_filters_selected_rows():
+         filtered_types = pd.Series(events[TYPE].unique()).iloc[list(input.event_filters_selected_rows())]
+         filtered_events = events[events[TYPE].isin(filtered_types)].copy()
+      filtered_events[TIME] = filtered_events[TIME].astype(str)
+
+      filtered_events_ref.set(filtered_events.reset_index(drop=True))
       return render.DataGrid(filtered_events_ref.get().drop(columns=[ID]), row_selection_mode="single")
    
    @render.download(filename="events.csv")
