@@ -14,6 +14,7 @@
     - in the file(s) you want to use the package in, import the four package modules: preprocessing.py, features.py, events.py, and plots.py
     - see [guide.ipynb](./guide.ipynb) for a brief notebook guide on all the functions that the package currently provides, as well as how to use them properly
 - Using the web application:
-    - See [![web_app_walkthrough.mp4](./web_app_walkthrough.mp4)](./web_app_walkthrough.mp4)
+    - Run `shiny run` in the terminal of the directory that houses `app.py`
+    - See [![web_app_walkthrough.mp4](./web_app_walkthrough.mp4)](./web_app_walkthrough.mp4) for a more detailed walkthrough of the application's features
 
  Thanks for using the package!
