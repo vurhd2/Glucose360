@@ -45,59 +45,44 @@ def daily_plot(
    @param id   the id of the patient whose data is graphed
    @param events  a DataFrame containing event timeframes for some (or all) of the given patients
    """
-   show_events = events is not None
+   show_events = not (events is None or events[events[ID] == id].empty)
    data = df.loc[id].copy()
-
+   data[TIME] = pd.to_datetime(data[TIME])
    data["Day"] = data[TIME].dt.date
-   days = data["Day"].astype(str).unique().tolist()
+
+   days = data["Day"].unique().astype(str).tolist()
 
    fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.66,0.34] if show_events else None,
-                        specs=[[{"type":"scatter"}, {"type":"table"}] for i in range(len(days))] if show_events else None,
+                        specs=[[{"type":"scatter"}, {"type":"table"}] for _ in range(len(days))] if show_events else None,
                         horizontal_spacing=0.01 if show_events else None)
-   row = 1
-   row_height = 0
-   for day, dataset in data.groupby("Day"):
-      fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day)), row=row, col=1)
+
+   for idx, (day, dataset) in enumerate(data.groupby("Day"), start=1):
+      fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day)), row=idx, col=1)
 
       if show_events:
-         events[TIME] = pd.to_datetime(events[TIME])
          day_events = events[(events[TIME].dt.date == day) & (events[ID] == id)].sort_values(TIME)
-         table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events["Description"].tolist()]
-         row_height = max(row_height, day_events.shape[0])
-         if day_events.shape[0] != 0:
+         if not day_events.empty:
+            table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events["Description"].tolist()]
             fig.add_trace(
                go.Table(
                   columnwidth=[10,40],
                   header=dict(values = [["<b>Time</b>"], ["<b>Description</b>"]],font=dict(size=11)),
                   cells=dict(values=table_body,align=['left', 'left'],font=dict(size=10),)
-               ), row=row, col=2
+               ), row=idx, col=2
             )
-      row += 1
 
-   if show_events:
-      if isinstance(events, pd.DataFrame):
-         event_data = events[events[ID] == id] if events is not None else None
-         if event_data is not None:
-            event_types = event_data['Type'].unique()
+            event_types = events['Type'].unique()
             with open('event_colors.json') as colors_file:
                color_dict = json.load(colors_file)
                colors = list(color_dict.values())
                color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
-               for index, row in event_data.iterrows():
-                  r = days.index(str(row[TIME].date())) + 1
+               for _, row in day_events.iterrows():
                   fig.add_shape(go.layout.Shape(
-                     type="line", 
-                     yref="y domain",
-                     x0=pd.to_datetime(row[TIME]), 
-                     y0=0,
-                     x1=pd.to_datetime(row[TIME]),
-                     y1=1,
-                     line=dict(color=color_map[row['Type']], width=3)), row=r, col=1)
-                  fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], row=r, col=1, showarrow=False)
-      elif events[ID] == id:
-         day = str(events[TIME].dt.date)
-         fig.add_vline(x=pd.to_datetime(events[TIME]), line_dash="dash", line_color=color_map[events['Type']])
-         fig.add_annotation(yref="y domain", x=pd.to_datetime(events[TIME]), y=1, text=events['Type'], showarrow=False)
+                     type="line", yref="y domain",
+                     x0=pd.to_datetime(row[TIME]), y0=0,
+                     x1=pd.to_datetime(row[TIME]), y1=1,
+                     line=dict(color=color_map[row['Type']], width=3)), row=idx, col=1)
+                  fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], row=idx, col=1, showarrow=False)
    
    # standardizing axes
    if len(days) > 1:
