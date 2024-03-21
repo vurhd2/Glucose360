@@ -13,9 +13,12 @@ TIME = config['variables']['time']
 LOW = 40
 HIGH = 400
 
+ex = r"(([\d]+-)(?P<id>[\d]+).(?P<section>[\w]+)(.+))"
+
 def import_data(
    path: str,
    name: str = None,
+   id_template: str = None,
    glucose: str = "Glucose Value (mg/dL)",
    time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
    interval: int = 5,
@@ -42,7 +45,7 @@ def import_data(
        if not os.path.isdir(path):
           raise ValueError("Directory does not exist")
        else:
-          return import_directory(path, glucose, time, interval, max_gap)
+          return import_directory(path, id_template, glucose, time, interval, max_gap)
     
     # check if path leads to .zip or .csv
     if ext.lower() in [".csv", ".zip"]:
@@ -53,7 +56,7 @@ def import_data(
    
     # path leads to .csv
     if ext.lower() == ".csv":
-       df = import_csv(path, glucose, time, interval, max_gap)
+       df = import_csv(path, id_template, glucose, time, interval, max_gap)
        return df.set_index(ID)
 
     # otherwise has to be a .zip file
@@ -62,10 +65,11 @@ def import_data(
       with tempfile.TemporaryDirectory() as temp_dir:
          zip_ref.extractall(temp_dir)
          dir = name or path.split("/")[-1].split(".")[0]
-         return import_directory((temp_dir + "/" + dir), glucose, time, interval, max_gap)
+         return import_directory((temp_dir + "/" + dir), id_template, glucose, time, interval, max_gap)
     
 def import_directory(
     path: str,
+    id_template: str = None,
     glucose: str = "Glucose Value (mg/dL)",
     time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
     interval: int = 5,
@@ -84,7 +88,7 @@ def import_directory(
     if len(csv_files) == 0:
        raise Exception("No CSV files found.")
 
-    data = pd.concat(import_csv(file, glucose, time, interval, max_gap) for file in csv_files)
+    data = pd.concat(import_csv(file, id_template, glucose, time, interval, max_gap) for file in csv_files)
     data = data.set_index([ID])
 
     print(f"{len(csv_files)} .csv files were found in the specified directory.")
@@ -93,6 +97,7 @@ def import_directory(
 
 def import_csv(
     path: str, 
+    id_template: str = None,
     glucose: str = "Glucose Value (mg/dL)",
     time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
     interval: int = 5, 
@@ -106,11 +111,10 @@ def import_csv(
                      (filling in a gap with a longer duration would be considered extrapolation)
     """
     df = pd.read_csv(path)
-
-    id = df["Patient Info"].iloc[0] + df["Patient Info"].iloc[1]
+    
+    id = retrieve_id(path.split("/")[-1], df, id_template)
 
     df = df.dropna(subset=[glucose])
-
     df = df.replace("Low", LOW)
     df = df.replace("High", HIGH)
 
@@ -125,6 +129,27 @@ def import_csv(
     df[ID] = id
 
     return df
+
+def retrieve_id(name: str, df: pd.DataFrame, id_template: str = None):
+   if id_template and "first" not in id_template and "last" not in id_template and "patient_identifier" not in id_template:
+      # need to parse file name for id
+      import re
+      pattern = re.compile(fr"{id_template}")
+      match = pattern.match(name)
+      id = str(match.group("id"))
+      try: 
+         id += str(match.group("section"))
+      except:
+         print(f"'Section' not defined for patient {id}.")
+      return id
+
+   # use csv fields for id instead
+   first = df["Patient Info"].iloc[0]
+   last = df["Patient Info"].iloc[1]
+   patient_identifier = df["Patient Info"].iloc[2]
+   id = df["Patient Info"].iloc[0] + df["Patient Info"].iloc[1] 
+   if id_template: id = id_template.format(first=first, last=last, patient_identifier=patient_identifier)
+   return id
 
 def resample_data(df: pd.DataFrame, minutes: int = 5, max_gap: int = 45) -> pd.DataFrame:
     """

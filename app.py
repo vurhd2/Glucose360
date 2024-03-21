@@ -28,6 +28,7 @@ app_ui = ui.page_fluid(
       ui.nav_panel(
          "Features",
          ui.card(
+            ui.input_text("id_template", "Template for ID Retrieval"),
             ui.input_text("glucose_col", "Name of Glucose Column", "Glucose Value (mg/dL)"),
             ui.input_text("time_col", "Name of Timestamp Column", "Timestamp (YYYY-MM-DDThh:mm:ss)"),
             ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
@@ -105,6 +106,7 @@ def server(input, output, session):
       if file is None:
          return pd.DataFrame()
       return import_data(path=file[0]["datapath"], name=file[0]["name"].split(".")[0],
+                         id_template=input.id_template(),
                          glucose=input.glucose_col(), time=input.time_col(),
                          interval=input.resample_interval(), max_gap=input.max_gap())
    
@@ -135,7 +137,7 @@ def server(input, output, session):
          if input.daily_events_switch() and (events_ref.get().shape[0] != 0): 
             dates = events_ref.get()[TIME].dt.date
             data = df()
-            height = max(height, (dates.value_counts().iloc[0] * 60 * data[data[ID] == input.select_patient_plot()][TIME].dt.date.unique().size))
+            height = max(height, (dates.value_counts().iloc[0] * 60 * data.loc[input.select_patient_plot()][TIME].dt.date.unique().size))
             upper = height
       elif plot_type == "Spaghetti": 
          lower = 250
