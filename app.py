@@ -83,6 +83,12 @@ app_ui = ui.page_fluid(
          ),
          ui.layout_columns(
             ui.card(
+               ui.card(
+                  ui.output_ui("ui_event_row"),
+                  ui.input_select("edit_event_col", "Column to Edit", [TIME, BEFORE, AFTER, TYPE, DESCRIPTION]),
+                  ui.input_text("edit_event_text", "Value to Replace With"),
+                  ui.input_action_button("edit_event", "Edit Event")
+               ),
                ui.layout_columns(
                   ui.output_data_frame("event_filters"),
                   ui.output_data_frame("events_table")
@@ -113,7 +119,7 @@ def server(input, output, session):
    @reactive.Effect
    @reactive.event(input.data_import)
    def get_initial_events():
-      events_ref.set(get_curated_events(df()))
+      events_ref.set(get_curated_events(df()).reset_index(drop=True))
       filtered_events_ref.set(events_ref.get())
 
    @render.ui
@@ -127,6 +133,7 @@ def server(input, output, session):
    @render.ui
    def plot_height():
       plot_type = input.select_plot()
+      patient = input.select_patient_plot()
       lower = 500
       height = 750
       upper = 2000
@@ -137,7 +144,7 @@ def server(input, output, session):
          if input.daily_events_switch() and (events_ref.get().shape[0] != 0): 
             dates = events_ref.get()[TIME].dt.date
             data = df()
-            height = max(height, (dates.value_counts().iloc[0] * 60 * data.loc[input.select_patient_plot()][TIME].dt.date.unique().size))
+            height = max(height, (dates.value_counts().iloc[0] * 60 * data.loc[patient][TIME].dt.date.unique().size))
             upper = height
       elif plot_type == "Spaghetti": 
          lower = 250
@@ -163,8 +170,9 @@ def server(input, output, session):
    @render_widget
    def plot():
       plot_type = input.select_plot()
+      daily_events = events_ref.get() if input.daily_events_switch() else None
       if plot_type == "Daily (Time-Series)":
-         daily_events = events_ref.get() if input.daily_events_switch() else None
+         if daily_events is not None: daily_events[TIME] = pd.to_datetime(daily_events[TIME])
          return daily_plot(df(), input.select_patient_plot(), input.plot_height_slider(), daily_events, app=True)
       elif plot_type == "Weekly (Time-Series)":
          return weekly_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
@@ -188,10 +196,12 @@ def server(input, output, session):
    def bulk_import_events():
       file: list[FileInfo] | None = input.event_import()
       if file is not None:
-         events_ref.set(pd.concat([events_ref.get(), import_events(path=file[0]["datapath"], name=file[0]["name"].split(".")[0],
+         added_events = pd.concat([events_ref.get(), import_events(path=file[0]["datapath"], name=file[0]["name"].split(".")[0],
                                id=input.select_patient_event(), day_col=input.event_day_col(),
                                time_col=input.event_time_col(), before=input.event_import_before(),
-                               after=input.event_import_after(), type=input.event_type())]).reset_index(drop=True))
+                               after=input.event_import_after(), type=input.event_type())])
+         added_events[TIME] = pd.to_datetime(added_events[TIME])
+         events_ref.set(added_events.reset_index(drop=True))
 
    @render.data_frame
    def event_filters():
@@ -201,8 +211,9 @@ def server(input, output, session):
       table = pd.DataFrame(events.drop_duplicates(subset=[TYPE])[TYPE])
       return render.DataGrid(table, row_selection_mode="multiple")
 
-   @render.data_frame
-   def events_table():
+   @reactive.Effect
+   @reactive.event(input.select_patient_event, input.event_filters_selected_rows, input.edit_event)
+   def filter_events():
       events = events_ref.get()
       events = events[(events[ID] == input.select_patient_event())]
 
@@ -210,11 +221,31 @@ def server(input, output, session):
       if input.event_filters_selected_rows():
          filtered_types = pd.Series(events[TYPE].unique()).iloc[list(input.event_filters_selected_rows())]
          filtered_events = events[events[TYPE].isin(filtered_types)].copy()
-      filtered_events[TIME] = filtered_events[TIME].astype(str)
+      filtered_events_ref.set(filtered_events)
 
-      filtered_events_ref.set(filtered_events.reset_index(drop=True))
-      return render.DataGrid(filtered_events_ref.get().drop(columns=[ID]), row_selection_mode="single")
+   @render.data_frame
+   def events_table():
+      filtered_events = filtered_events_ref.get()
+      filtered_events[TIME] = filtered_events[TIME].astype(str)
+      filtered_events.drop(columns=[ID])
+
+      return render.DataGrid(filtered_events, row_selection_mode="single")
    
+   @render.ui
+   def ui_event_row():
+      return ui.input_numeric("edit_event_row", "Row to Edit", 1, min=1, max=filtered_events_ref.get().shape[0])
+   
+   @reactive.Effect
+   @reactive.event(input.edit_event)
+   def edit_event():
+      filtered_events = filtered_events_ref.get()
+      filtered_events[input.edit_event_col()].iloc[input.edit_event_row()-1] = input.edit_event_text()
+      filtered_events_ref.set(filtered_events)
+
+      events = events_ref.get()
+      events.loc[filtered_events.index.tolist()] = filtered_events
+      events_ref.set(events)
+
    @render.download(filename="events.csv")
    def download_events():
       filtered_events = filtered_events_ref.get()
