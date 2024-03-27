@@ -135,10 +135,13 @@ def retrieve_id(name: str, df: pd.DataFrame, id_template: str = None):
       # need to parse file name for id
       import re
       pattern = re.compile(fr"{id_template}")
-      match = pattern.match(name)
+      match = pattern.search(name)
+      if match is None:
+         raise Exception("The RegEx ID template passed does not match the file name.")
       id = str(match.group("id"))
       try: 
-         id += str(match.group("section"))
+         section = str(match.group("section"))
+         id += f" ({section})"
       except:
          print(f"'Section' not defined for patient {id}.")
       return id
