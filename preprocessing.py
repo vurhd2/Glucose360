@@ -73,7 +73,7 @@ def import_directory(
     glucose: str = "Glucose Value (mg/dL)",
     time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
     interval: int = 5,
-    max_gap: int = 45,
+    max_gap: int = 45,   
 ) -> pd.DataFrame:
     """
     Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
@@ -224,3 +224,23 @@ def get_interval():
    Accessor function for the resampling interval (for use within other modules)
    """
    return resample_interval
+
+def segment_data(path: str, df: pd.DataFrame) -> pd.DataFrame:
+   """
+   Splits patients' data into multiple segments based on a given .csv file containing ID's and DateTimes
+   """
+   segments = pd.read_csv(path)
+   segments[TIME] = pd.to_datetime(segments[TIME])
+   segments.set_index(ID, inplace=True)
+
+   segmented_df = df.reset_index(drop=False)
+
+   for id, locations in segments.groupby(ID):
+      locations.reset_index(drop=True, inplace=True)
+      locations.sort_values(TIME, ascending=False, inplace=True)
+      for index, row in locations.iterrows():
+         mask = (segmented_df[ID] == id) & (segmented_df[TIME] >= row[TIME])
+         segmented_df.loc[mask, ID] = f"{id} ({index})"
+   
+   segmented_df.set_index(ID, inplace=True)
+   return segmented_df
