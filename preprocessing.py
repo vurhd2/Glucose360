@@ -23,6 +23,7 @@ def import_data(
    time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
    interval: int = 5,
    max_gap: int = 45,
+   output = print
 ) -> pd.DataFrame:
     """
     Returns a Multiindexed Pandas DataFrame containing all of the csv data found at the given path.
@@ -45,7 +46,7 @@ def import_data(
        if not os.path.isdir(path):
           raise ValueError("Directory does not exist")
        else:
-          return import_directory(path, id_template, glucose, time, interval, max_gap)
+          return import_directory(path, id_template, glucose, time, interval, max_gap, output)
     
     # check if path leads to .zip or .csv
     if ext.lower() in [".csv", ".zip"]:
@@ -65,7 +66,7 @@ def import_data(
       with tempfile.TemporaryDirectory() as temp_dir:
          zip_ref.extractall(temp_dir)
          dir = name or path.split("/")[-1].split(".")[0]
-         return import_directory((temp_dir + "/" + dir), id_template, glucose, time, interval, max_gap)
+         return import_directory((temp_dir + "/" + dir), id_template, glucose, time, interval, max_gap, output)
     
 def import_directory(
     path: str,
@@ -74,6 +75,7 @@ def import_directory(
     time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
     interval: int = 5,
     max_gap: int = 45,   
+    output = print
 ) -> pd.DataFrame:
     """
     Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
@@ -87,13 +89,21 @@ def import_directory(
 
     if len(csv_files) == 0:
        raise Exception("No CSV files found.")
+    
+    output(f"{len(csv_files)} .csv files were found in the specified directory.")
+    
+    data = []
+    for file in csv_files:
+       try:
+          data.append(import_csv(file, id_template, glucose, time, interval, max_gap))
+       except:
+          continue
 
-    data = pd.concat(import_csv(file, id_template, glucose, time, interval, max_gap) for file in csv_files)
-    data = data.set_index([ID])
+    if len(data) == 0: raise Exception("CSV files found, but none were valid.")  
+    df = pd.concat(data)
+    df.set_index([ID], inplace=True)
 
-    print(f"{len(csv_files)} .csv files were found in the specified directory.")
-
-    return data
+    return df
 
 def import_csv(
     path: str, 
