@@ -21,6 +21,7 @@ DESCRIPTION = config['variables']['description']
 def daily_plot_all(
     df: pd.DataFrame,
     events: pd.DataFrame = None,
+    save: bool = False,
     height: int = 2000
 ):
     """
@@ -30,14 +31,15 @@ def daily_plot_all(
     @param height
     """
     for id, data in df.groupby(ID):
-        daily_plot(data, id, height, events)
+        daily_plot(data, id, height, events, save)
 
 def daily_plot(
    df: pd.DataFrame,
    id: str,
    height: int = 2000,
    events: pd.DataFrame = None,
-   app = False
+   save: bool = False,
+   app: bool = False
 ):
    """
    Only graphs (and possibly saves) a daily plot for the given patient
@@ -51,6 +53,7 @@ def daily_plot(
    data["Day"] = data[TIME].dt.date
 
    days = data["Day"].unique().astype(str).tolist()
+   offset = pd.Timedelta(hours=1, minutes=30)
 
    fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.66,0.34] if show_events else None,
                         specs=[[{"type":"scatter"}, {"type":"table"}] for _ in range(len(days))] if show_events else None,
@@ -58,6 +61,7 @@ def daily_plot(
 
    for idx, (day, dataset) in enumerate(data.groupby("Day"), start=1):
       fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day)), row=idx, col=1)
+      fig.update_xaxes(range=[pd.Timestamp(day) - offset, pd.Timestamp(day) + pd.Timedelta(days=1) + offset], row=idx, col=1)
 
       if show_events:
          day_events = events[(events[TIME].dt.date == day) & (events[ID] == id)].sort_values(TIME)
@@ -84,15 +88,10 @@ def daily_plot(
                      line=dict(color=color_map[row['Type']], width=3)), row=idx, col=1)
                   fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], row=idx, col=1, showarrow=False)
    
-   # standardizing axes
-   if len(days) > 1:
-      offset_before = pd.Timedelta(hours=1, minutes=26)
-      offset_after = pd.Timedelta(hours=1, minutes=23)
-      fig.update_xaxes(range=[pd.Timestamp(days[0]) - offset_before, pd.Timestamp(days[1]) + offset_after], row=1, col=1)
-      fig.update_xaxes(range=[pd.Timestamp(days[-1]) - offset_before, (pd.Timestamp(days[-1]) + pd.Timedelta(days=1)) + offset_after], row=len(days), col=1)
    fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
-
    fig.update_layout(title=f"Daily Plot for {id}", height=height, showlegend=(not show_events))
+
+   if save: fig.write_image(f"{id}_daily_plot.pdf", width=2500, height=height) #fig.write_image(f"{id}_daily_plot.pdf", width=2481, height=3507, scale=2)
    if app: return fig
    fig.show()
 
@@ -124,22 +123,13 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
    before = event[TIME] - pd.Timedelta(minutes=event[BEFORE])
    after = event[TIME] + pd.Timedelta(minutes=event[AFTER])
 
-   subplot_figs = []
    data["Day"] = data[TIME].dt.date
-   for day, dataset in data.groupby("Day"):
-      subplot_figs.append(
-         go.Scatter(
-               x=dataset[TIME],
-               y=dataset[GLUCOSE],
-               mode='lines+markers',
-               name=str(day)
-         )
-      )
+   subplot_figs = [go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers', name=str(day)) for day, dataset in data.groupby("Day")]
    fig = go.Figure(data=subplot_figs, layout=go.Layout(title=f"Event Plot for {id}"))
 
    if events is not None:
-      event_data = events[events[ID] == id] if events is not None else None
-      if event_data is not None:
+      event_data = events[events[ID] == id]
+      if not event_data.empty:
          event_types = event_data[TYPE].unique()
          with open('event_colors.json') as colors_file:
             color_dict = json.load(colors_file)
