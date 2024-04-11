@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import configparser
 from preprocessing import get_interval
+import line_profiler
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -169,6 +170,7 @@ def MAG(df: pd.DataFrame) -> float:
    data = df[(df[TIME].dt.minute == (df[TIME].dt.minute).iloc[0]) & (df[TIME].dt.second == (df[TIME].dt.second).iloc[0])][GLUCOSE]
    return np.sum(data.diff().abs()) / data.size
 
+@line_profiler.profile
 def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 180) -> float:
    data = df.reset_index(drop=True)
 
@@ -193,6 +195,7 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 
          mage +=  segment_duration * MAGE_helper(segment, short_ma, long_ma)
       return mage / total_duration
 
+@line_profiler.profile
 def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    averages = pd.DataFrame()
    averages[GLUCOSE] = df[GLUCOSE]
@@ -210,7 +213,7 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
    # get crossing points
    glu = lambda i: averages[GLUCOSE].iloc[i]
    average = lambda i: averages["DELTA_SL"].iloc[i]
-   crosses = pd.DataFrame.from_records([{"location": 0, "type": np.where(average(0) > 0, "peak", "nadir")}])
+   crosses_list = [{"location": 0, "type": np.where(average(0) > 0, "peak", "nadir")}]
 
    for index in range(1, averages.shape[0]):
       current_actual = glu(index)
@@ -222,13 +225,14 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
           ((not np.isnan(current_average)) and (not np.isnan(previous_average)))):
          if current_average * previous_average < 0:
             type = np.where(current_average < previous_average, "nadir", "peak")
-            crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])     
-         elif (not np.isnan(current_average) and (current_average * average(crosses["location"].iloc[-1]) < 0)):
-            prev_delta = average(crosses["location"].iloc[-1])
+            crosses_list.append({"location": index, "type": type})   
+         elif (not np.isnan(current_average) and (current_average * average(crosses_list[-1]["location"]) < 0)):
+            prev_delta = average(crosses_list[-1]["location"])
             type = np.where(current_average < prev_delta, "nadir", "peak")
-            crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": index, "type": type}])])
+            crosses_list.append({"location": index, "type": type})
 
-   crosses = pd.concat([crosses, pd.DataFrame.from_records([{"location": None, "type": np.where(average(-1) > 0, "peak", "nadir")}])])     
+   crosses_list.append({"location": None, "type": np.where(average(-1) > 0, "peak", "nadir")})
+   crosses = pd.DataFrame(crosses_list)     
 
    num_extrema = crosses.shape[0] -  1
    minmax = np.tile(np.nan, num_extrema)
@@ -251,8 +255,8 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
    N = len(minmax)
 
    # MAGE+
-   mage_plus_heights = pd.Series()
-   mage_plus_tp_pairs = {}
+   mage_plus_heights = []
+   mage_plus_tp_pairs = []
    j = 0; prev_j = 0
    while j < N:
       delta = differences[prev_j:j+1,j]
@@ -266,8 +270,8 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
                j = k
             if (differences[j, k] < (-1 * sd)) or (k == N - 1):
                max_v = minmax[j] - minmax[i]
-               mage_plus_heights = pd.concat([mage_plus_heights, pd.Series(max_v)])
-               mage_plus_tp_pairs[len(mage_plus_tp_pairs)] = [i, j]
+               mage_plus_heights.append(max_v)
+               mage_plus_tp_pairs.append([i, j])
 
                prev_j = k
                j = k
@@ -276,8 +280,8 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
          j += 1
    
    # MAGE-
-   mage_minus_heights = pd.Series() 
-   mage_minus_tp_pairs = {} 
+   mage_minus_heights = []
+   mage_minus_tp_pairs = [] 
    j = 0; prev_j = 0
    while j < N:
       delta = differences[prev_j:j+1,j]
@@ -290,8 +294,8 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
                j = k
             if (differences[j, k] > sd) or (k == N - 1):
                min_v = minmax[j] - minmax[i]
-               mage_minus_heights = pd.concat([mage_minus_heights, pd.Series(min_v)])
-               mage_minus_tp_pairs[len(mage_minus_tp_pairs)] = [i, j, k]
+               mage_minus_heights.append(min_v)
+               mage_minus_tp_pairs.append([i, j, k])
 
                prev_j = k
                j = k
@@ -299,8 +303,8 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
       else:
          j += 1
 
-   plus_first = np.where(mage_plus_heights.size > 0 and ((mage_minus_heights.size == 0) or (mage_plus_tp_pairs[0][1] <= mage_minus_tp_pairs[0][0])), True, False)
-   return float(np.where(plus_first, np.mean(mage_plus_heights), np.mean(mage_minus_heights.abs())))
+   plus_first = np.where(len(mage_plus_heights) > 0 and ((len(mage_minus_heights) == 0) or (mage_plus_tp_pairs[0][1] <= mage_minus_tp_pairs[0][0])), True, False)
+   return float(np.where(plus_first, np.mean(mage_plus_heights), np.mean(np.absolute(mage_minus_heights))))
 
 def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.DataFrame:
    interval = get_interval()
@@ -310,11 +314,11 @@ def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.DataFrame:
    positiondelta = round(timedelta / interval)
    return df[GLUCOSE].diff(periods=positiondelta) / timedelta
 
-"""
-Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
-returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
-"""
 def create_features(dataset: pd.DataFrame) -> pd.DataFrame:
+    """
+    Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
+    returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
+    """
     df = pd.DataFrame()
 
     for id, data in dataset.groupby(ID):
