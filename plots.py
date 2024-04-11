@@ -8,6 +8,8 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
+import line_profiler
+
 config = configparser.ConfigParser()
 config.read('config.ini')
 ID = config['variables']['id']
@@ -127,24 +129,29 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
    subplot_figs = [go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers', name=str(day)) for day, dataset in data.groupby("Day")]
    fig = go.Figure(data=subplot_figs, layout=go.Layout(title=f"Event Plot for {id}"))
 
-   if events is not None:
-      event_data = events[events[ID] == id]
-      if not event_data.empty:
-         event_types = event_data[TYPE].unique()
-         with open('event_colors.json') as colors_file:
-            color_dict = json.load(colors_file)
-            colors = list(color_dict.values())
-            color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
-            for index, row in event_data.iterrows():
-               fig.add_vline(x=pd.to_datetime(row[TIME]), line_dash="dash", line_color=color_map[row[TYPE]])
-               fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row[TYPE], showarrow=False)
-   else:
-      fig.add_vline(x=pd.to_datetime(event[TIME]), line_dash="dash", line_color=color_map[event[TYPE]])
-      fig.add_annotation(yref="y domain", x=pd.to_datetime(event[TIME]), y=1, text=event[TYPE], showarrow=False)
+   event_data = events[events[ID] == id] if events is not None else pd.DataFrame()
+   if not event_data.empty: create_event_lines(fig, event_data)
 
    fig.update_xaxes(type="date", range=[before, after])
    if app: return fig
    fig.show()
+
+def create_event_lines(fig: go.Figure, events: pd.DataFrame):
+   event_types = events[TYPE].unique()
+   events[TIME] = pd.to_datetime(events[TIME])
+   with open('event_colors.json') as colors_file:
+      color_dict = json.load(colors_file)
+      colors = list(color_dict.values())
+      color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
+      
+      def add_event_line(event: pd.Series):
+         time = getattr(event, TIME)
+         type = getattr(event, TYPE)
+         fig.add_vline(x=time, line_dash="dash", line_color=color_map[type])
+         fig.add_annotation(yref="y domain", x=time, y=1, text=type, showarrow=False)
+
+      for row in events.itertuples():
+         add_event_line(row)
 
 def weekly_plot_all(df: pd.DataFrame, height: int = 1000):
    """
