@@ -86,22 +86,28 @@ def import_directory(
                         (filling in a gap with a longer duration would be considered extrapolation)
     """
     csv_files = glob.glob(path + "/*.csv")
+    num_files = len(csv_files)
 
-    if len(csv_files) == 0:
+    if num_files == 0:
        raise Exception("No CSV files found.")
     
-    output(f"{len(csv_files)} .csv files were found in the specified directory.")
+    output(f"{num_files} .csv files were found in the specified directory.")
     
     data = []
+    num_valid_files = num_files
     for file in csv_files:
        try:
           data.append(import_csv(file, id_template, glucose, time, interval, max_gap))
        except:
-          continue
+          num_valid_files -= 1
+   
+    output(f"{num_valid_files} .csv files were successfully imported.")
 
     if len(data) == 0: raise Exception("CSV files found, but none were valid.")  
     df = pd.concat(data)
     df.set_index([ID], inplace=True)
+
+    output(f"{df.index.unique().size} sections were found in the imported data.")
 
     return df
 
