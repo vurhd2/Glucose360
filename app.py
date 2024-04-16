@@ -1,4 +1,4 @@
-from preprocessing import import_data
+from preprocessing import import_data, segment_data
 from events import *
 from plots import *
 from features import create_features
@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 
 from shiny import App, ui, render, reactive
 from shiny.types import FileInfo
+from shiny.ui import tags
 from shinywidgets import output_widget, render_widget
 
 config = configparser.ConfigParser()
@@ -27,13 +28,16 @@ app_ui = ui.page_fluid(
    ui.navset_pill(
       ui.nav_panel(
          "Features",
-         ui.card(
-            ui.input_text("id_template", "Template for ID Retrieval"),
-            ui.input_text("glucose_col", "Name of Glucose Column", "Glucose Value (mg/dL)"),
-            ui.input_text("time_col", "Name of Timestamp Column", "Timestamp (YYYY-MM-DDThh:mm:ss)"),
-            ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
-            ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
-            ui.input_file("data_import", "Import Dexcom CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False),
+         ui.layout_columns(
+            ui.card(
+               ui.input_text("id_template", "Template for ID Retrieval"),
+               ui.input_text("glucose_col", "Name of Glucose Column", "Glucose Value (mg/dL)"),
+               ui.input_text("time_col", "Name of Timestamp Column", "Timestamp (YYYY-MM-DDThh:mm:ss)"),
+               ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
+               ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
+               ui.input_file("data_import", "Import Dexcom CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False),
+            ),
+            ui.card(ui.input_file("split_data", "Split Data", accept=[".csv"], multiple=False))
          ),
          ui.card(
             ui.output_data_frame("features_table"),
@@ -89,11 +93,15 @@ app_ui = ui.page_fluid(
                   ui.input_text("edit_event_text", "Value to Replace With"),
                   ui.input_action_button("edit_event", "Edit Event")
                ),
-               ui.layout_columns(
-                  ui.output_data_frame("event_filters"),
-                  ui.output_data_frame("events_table")
-               ),
-               ui.download_button("download_events", "Download Events in Table as .csv file")
+               ui.card(
+                  ui.output_ui("ui_event_select"),
+                  tags.div(
+                     tags.div(ui.output_data_frame("event_filters"), style="height: 100%"),
+                     ui.output_data_frame("events_table"),
+                     style="display: flex;"
+                  ),
+                  ui.download_button("download_events", "Download Events in Table as .csv file")
+               )
             ),
             ui.card(output_widget("display_event_plot"))
          ),
@@ -106,15 +114,22 @@ def server(input, output, session):
    events_ref = reactive.Value(pd.DataFrame())
    filtered_events_ref = reactive.Value(pd.DataFrame())
 
+   def notify(message):
+      ui.notification_show(message, close_button=True) 
+
    @reactive.Calc
    def df():
-      file: list[FileInfo] | None = input.data_import()
-      if file is None:
+      data_file: list[FileInfo] | None = input.data_import()
+      if data_file is None:
          return pd.DataFrame()
-      return import_data(path=file[0]["datapath"], name=file[0]["name"].split(".")[0],
+      data = import_data(path=data_file[0]["datapath"], name=data_file[0]["name"].split(".")[0],
                          id_template=input.id_template(),
                          glucose=input.glucose_col(), time=input.time_col(),
-                         interval=input.resample_interval(), max_gap=input.max_gap())
+                         interval=input.resample_interval(), max_gap=input.max_gap(), output=notify)
+      split_file: list[FileInfo] | None = input.split_data()
+      if split_file is None:
+         return data
+      return segment_data(split_file[0]["datapath"], data)
    
    @reactive.Effect
    @reactive.event(input.data_import)
@@ -201,13 +216,14 @@ def server(input, output, session):
                                time_col=input.event_time_col(), before=input.event_import_before(),
                                after=input.event_import_after(), type=input.event_type())])
          added_events[TIME] = pd.to_datetime(added_events[TIME])
-         events_ref.set(added_events.reset_index(drop=True))
+         added_events.reset_index(drop=True, inplace=True)
+         events_ref.set(added_events)
+         filtered_events_ref.set(added_events)
 
    @render.data_frame
    def event_filters():
       events = events_ref.get()
       events = events[events[ID] == input.select_patient_event()]
-      #table = pd.DataFrame(events[TYPE].unique())
       table = pd.DataFrame(events.drop_duplicates(subset=[TYPE])[TYPE])
       return render.DataGrid(table, row_selection_mode="multiple")
 
@@ -227,9 +243,9 @@ def server(input, output, session):
    def events_table():
       filtered_events = filtered_events_ref.get()
       filtered_events[TIME] = filtered_events[TIME].astype(str)
-      filtered_events.drop(columns=[ID])
+      table = filtered_events.drop(columns=[ID]).reset_index(drop=True)
 
-      return render.DataGrid(filtered_events, row_selection_mode="single")
+      return render.DataGrid(table, row_selection_mode="multiple")
    
    @render.ui
    def ui_event_row():
@@ -249,7 +265,8 @@ def server(input, output, session):
    @render.download(filename="events.csv")
    def download_events():
       filtered_events = filtered_events_ref.get()
-      yield filtered_events[filtered_events[ID] == input.select_patient_event()].to_csv()
+      downloaded_events = filtered_events[filtered_events[ID] == input.select_patient_event()].reset_index(drop=True)
+      yield downloaded_events.loc[list(input.events_table_selected_rows())].to_csv()
    
    @reactive.Effect
    @reactive.event(input.add_event_button)
@@ -265,22 +282,31 @@ def server(input, output, session):
       added_event[TIME] = pd.to_datetime(added_event[TIME])
       events_ref.set(pd.concat([events_ref.get(), added_event]).reset_index(drop=True))
    
+   @render.ui
+   def ui_event_select():
+      return ui.input_numeric("select_event", "Event to Display", 1, min=1, max=filtered_events_ref.get().shape[0])
+
    @render.data_frame
    def event_metrics_table():
-      if not input.events_table_selected_rows(): raise Exception("Select an event from the table to display relevant metrics.")
+      if not input.select_event(): raise Exception("Select an event from the table to display relevant metrics.")
       filtered_events = filtered_events_ref.get()
-      event = filtered_events[filtered_events[ID] == input.select_patient_event()].iloc[list(input.events_table_selected_rows())]
+      event = filtered_events[filtered_events[ID] == input.select_patient_event()].iloc[input.select_event()-1]
       return render.DataGrid(event_metrics(df(), event.squeeze()))
 
    @render_widget
    def display_event_plot():
-      if not input.events_table_selected_rows(): 
+      if not input.select_event(): 
          empty = go.Figure(go.Scatter(x=pd.Series(), y=pd.Series(), mode="markers"))
          empty.update_layout(title="Select an event from the table to display event plot.")
          return empty
+      
       filtered_events = filtered_events_ref.get()
+      plot_events = filtered_events
+      if not input.event_filters_selected_rows():
+         provided_event_types = ["hyper level 0 episode", "hyper level 1 episode", "hyper level 2 episode", "hypo level 1 episode", "hypo level 2 episode", "hyper excursion", "hypo excursion"]
+         plot_events = plot_events[~plot_events[TYPE].isin(provided_event_types)]
       id = input.select_patient_event()
-      event = filtered_events[filtered_events[ID] == id].iloc[list(input.events_table_selected_rows())].squeeze()
-      return event_plot(df(), id, event, events_ref.get(), app=True)
+      event = filtered_events[filtered_events[ID] == id].iloc[input.select_event()-1].squeeze()
+      return event_plot(df(), id, event, plot_events, app=True)
 
 app = App(app_ui, server, debug=False)
