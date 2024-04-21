@@ -12,6 +12,9 @@ from shiny.types import FileInfo
 from shiny.ui import tags
 from shinywidgets import output_widget, render_widget
 
+import zipfile
+import io
+
 config = configparser.ConfigParser()
 config.read('config.ini')
 ID = config['variables']['id']
@@ -50,7 +53,8 @@ app_ui = ui.page_fluid(
             ui.output_ui("patient_plot"),
             ui.input_select("select_plot", "Select Plot:", ["Daily (Time-Series)", "Weekly (Time-Series)", "Spaghetti", "AGP"]),
             ui.output_ui("plot_settings"),
-            ui.output_ui("plot_height")
+            ui.output_ui("plot_height"),
+            ui.download_button("download_plot", "Download Currently Displayed Plot")
          ),
          ui.card(
             output_widget("plot"),
@@ -113,6 +117,7 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
    events_ref = reactive.Value(pd.DataFrame())
    filtered_events_ref = reactive.Value(pd.DataFrame())
+   fig: go.Figure = None
 
    def notify(message):
       ui.notification_show(message, close_button=True) 
@@ -184,18 +189,44 @@ def server(input, output, session):
 
    @render_widget
    def plot():
+      global fig
       plot_type = input.select_plot()
       daily_events = events_ref.get() if input.daily_events_switch() else None
       if plot_type == "Daily (Time-Series)":
          if daily_events is not None: daily_events[TIME] = pd.to_datetime(daily_events[TIME])
-         return daily_plot(df(), input.select_patient_plot(), input.plot_height_slider(), daily_events, app=True)
+         fig = daily_plot(df(), input.select_patient_plot(), input.plot_height_slider(), daily_events, app=True)
       elif plot_type == "Weekly (Time-Series)":
-         return weekly_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
+         fig = weekly_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
       elif plot_type == "Spaghetti":
-         return spaghetti_plot(df(), input.select_patient_plot(), input.spaghetti_chunk_switch(), input.plot_height_slider(), app=True)
+         fig = spaghetti_plot(df(), input.select_patient_plot(), input.spaghetti_chunk_switch(), input.plot_height_slider(), app=True)
       else:
-         return AGP_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
+         fig = AGP_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
+      
+      return fig
    
+   @render.download(filename="plot.zip")
+   def download_plot():
+      global fig
+      encoded_pdf = fig.to_image(format="pdf", width=1500, height=input.plot_height_slider())
+      encoded_html = bytes(fig.to_html(), 'utf-8')
+      
+      html_stream = io.BytesIO(encoded_html)
+      pdf_stream = io.BytesIO(encoded_pdf)
+
+      # Create a byte stream to hold the zip file
+      zip_stream = io.BytesIO()
+
+      # Create a zip file and write the HTML and PDF files to it
+      with zipfile.ZipFile(zip_stream, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+         # Write the HTML file
+         zip_file.writestr('plot.html', html_stream.getvalue())
+         # Write the PDF file
+         zip_file.writestr('plot.pdf', pdf_stream.getvalue())
+
+      # Get the byte-encoded zip file
+      zip_stream.seek(0)  # Rewind the stream to the beginning
+      yield zip_stream.getvalue()
+
    @render.data_frame
    def features_table():
       if df().shape[0] == 0: raise Exception("Please upload your CGM data above.")
