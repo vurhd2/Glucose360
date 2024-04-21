@@ -57,18 +57,29 @@ def daily_plot(
    days = data["Day"].unique().astype(str).tolist()
    offset = pd.Timedelta(hours=1, minutes=30)
 
+   rendered_types = []
+   if show_events:
+      event_types = events[TYPE].unique()
+      with open('event_colors.json') as colors_file:
+         color_dict = json.load(colors_file)
+         colors = list(color_dict.values())
+         color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
+
    fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.66,0.34] if show_events else None,
                         specs=[[{"type":"scatter"}, {"type":"table"}] for _ in range(len(days))] if show_events else None,
                         horizontal_spacing=0.01 if show_events else None)
 
+   num_events = 0
+
    for idx, (day, dataset) in enumerate(data.groupby("Day"), start=1):
-      fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day)), row=idx, col=1)
+      fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day), showlegend=False), row=idx, col=1)
       fig.update_xaxes(range=[pd.Timestamp(day) - offset, pd.Timestamp(day) + pd.Timedelta(days=1) + offset], row=idx, col=1)
 
       if show_events:
          day_events = events[(events[TIME].dt.date == day) & (events[ID] == id)].sort_values(TIME)
+         num_events = max(num_events, day_events.shape[0])
          if not day_events.empty:
-            table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events["Description"].tolist()]
+            table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events[DESCRIPTION].tolist()]
             fig.add_trace(
                go.Table(
                   columnwidth=[10,40],
@@ -77,23 +88,34 @@ def daily_plot(
                ), row=idx, col=2
             )
 
-            event_types = events['Type'].unique()
-            with open('event_colors.json') as colors_file:
-               color_dict = json.load(colors_file)
-               colors = list(color_dict.values())
-               color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
-               for _, row in day_events.iterrows():
-                  fig.add_shape(go.layout.Shape(
-                     type="line", yref="y domain",
-                     x0=pd.to_datetime(row[TIME]), y0=0,
-                     x1=pd.to_datetime(row[TIME]), y1=1,
-                     line=dict(color=color_map[row['Type']], width=3)), row=idx, col=1)
-                  fig.add_annotation(yref="y domain", x=pd.to_datetime(row[TIME]), y=1, text=row['Type'], row=idx, col=1, showarrow=False)
-   
-   fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
-   fig.update_layout(title=f"Daily Plot for {id}", height=height, showlegend=(not show_events))
+            """
+            day_events[TIME] = pd.to_datetime(day_events[TIME])
+            for event in day_events.itertuples():
+               time = getattr(event, TIME)
+               type = getattr(event, TYPE)
+               already_rendered = (type in rendered_types) 
+               if (not already_rendered): rendered_types.append(type)
+               fig.add_vline(x=time, row=idx, col=1, line_dash="dash", line_color=color_map[type], name=type, legendgroup=type, showlegend=(not already_rendered))"""
 
-   if save: fig.write_image(f"{id}_daily_plot.pdf", width=2500, height=height) #fig.write_image(f"{id}_daily_plot.pdf", width=2481, height=3507, scale=2)
+            for _, row in day_events.iterrows():
+               already_rendered = (row[TYPE] in rendered_types)
+               if (not already_rendered): rendered_types.append(row[TYPE])
+               fig.add_shape(go.layout.Shape(
+                  type="line", yref="y domain",
+                  x0=pd.to_datetime(row[TIME]), y0=0,
+                  x1=pd.to_datetime(row[TIME]), y1=1,
+                  line_color=color_map[row[TYPE]], line_dash="dash",
+                  name=row[TYPE], legendgroup=row[TYPE], showlegend=(not already_rendered)), row=idx, col=1)
+
+   fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
+
+   image_height = max((60 * len(days) * num_events), height)
+   fig.update_layout(title=f"Daily Plot for {id}", height=image_height, showlegend=True)
+
+   if save: 
+      fig.write_image(f"{id}_daily_plot.pdf", width=1500, height=image_height)
+      fig.write_html(f"{id}_daily_plot.html")
+
    if app: return fig
    fig.show()
 
@@ -143,15 +165,14 @@ def create_event_lines(fig: go.Figure, events: pd.DataFrame):
       color_dict = json.load(colors_file)
       colors = list(color_dict.values())
       color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
-      
-      def add_event_line(event: pd.Series):
+
+      rendered_types = []
+      for event in events.itertuples():
          time = getattr(event, TIME)
          type = getattr(event, TYPE)
-         fig.add_vline(x=time, line_dash="dash", line_color=color_map[type])
-         fig.add_annotation(yref="y domain", x=time, y=1, text=type, showarrow=False)
-
-      for row in events.itertuples():
-         add_event_line(row)
+         already_rendered = (type in rendered_types) 
+         if (not already_rendered): rendered_types.append(type)
+         fig.add_vline(x=time, line_dash="dash", line_color=color_map[type], name=type, legendgroup=type, showlegend=(not already_rendered))
 
 def weekly_plot_all(df: pd.DataFrame, height: int = 1000):
    """
