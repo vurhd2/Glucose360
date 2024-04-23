@@ -53,6 +53,7 @@ app_ui = ui.page_fluid(
             ui.output_ui("patient_plot"),
             ui.input_select("select_plot", "Select Plot:", ["Daily (Time-Series)", "Weekly (Time-Series)", "Spaghetti", "AGP"]),
             ui.output_ui("plot_settings"),
+            ui.output_data_frame("daily_filters"),
             ui.output_ui("plot_height"),
             ui.download_button("download_plot", "Download Currently Displayed Plot")
          ),
@@ -117,6 +118,7 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
    events_ref = reactive.Value(pd.DataFrame())
    filtered_events_ref = reactive.Value(pd.DataFrame())
+   daily_events_ref = reactive.Value(pd.DataFrame())
    fig: go.Figure = None
 
    def notify(message):
@@ -161,10 +163,11 @@ def server(input, output, session):
          lower = 750
          height = 3000 
          upper = 4000
-         if input.daily_events_switch() and (events_ref.get().shape[0] != 0): 
-            dates = events_ref.get()[TIME].dt.date
+         if input.daily_filters_selected_rows() and (events_ref.get().shape[0] != 0): 
+            events = daily_events_ref.get()
+            dates = pd.to_datetime(events[TIME]).dt.date
             data = df()
-            height = max(height, (dates.value_counts().iloc[0] * 60 * data.loc[patient][TIME].dt.date.unique().size))
+            height = max(3000, (dates.value_counts().iloc[0] * 65 * data.loc[patient][TIME].dt.date.unique().size))
             upper = height
       elif plot_type == "Spaghetti": 
          lower = 250
@@ -180,21 +183,36 @@ def server(input, output, session):
    @render.ui
    def plot_settings():
       plot_type = input.select_plot()
-      if plot_type == "Daily (Time-Series)":
-         events_on = input.daily_events_switch() if "daily_events_switch" in input else False
-         return ui.input_switch("daily_events_switch", "Show Events", value=events_on)
-      elif plot_type == "Spaghetti":
+      if plot_type == "Spaghetti":
          chunk_day = input.spaghetti_chunk_switch() if "spaghetti_chunk_switch" in input else False
          return ui.input_switch("spaghetti_chunk_switch", "Chunk Weekend/Weekday", value=chunk_day)
+   
+   @reactive.Effect
+   @reactive.event(input.daily_filters_selected_rows)
+   def filter_daily_events():
+      daily_events_ref.set(None)
+
+      if input.daily_filters_selected_rows():
+         daily_events = events_ref.get()
+         daily_events = daily_events[daily_events[ID] == input.select_patient_plot()]
+         daily_events[TIME] = pd.to_datetime(daily_events[TIME])
+
+         filtered_types = pd.Series(daily_events[TYPE].unique()).iloc[list(input.daily_filters_selected_rows())]
+         daily_events_ref.set(daily_events[daily_events[TYPE].isin(filtered_types)])
+
+   @render.data_frame
+   def daily_filters():
+      events = events_ref.get()
+      events = events[events[ID] == input.select_patient_plot()]
+      table = pd.DataFrame(events.drop_duplicates(subset=[TYPE])[TYPE])
+      return render.DataGrid(table, row_selection_mode="multiple")
 
    @render_widget
    def plot():
       global fig
       plot_type = input.select_plot()
-      daily_events = events_ref.get() if input.daily_events_switch() else None
       if plot_type == "Daily (Time-Series)":
-         if daily_events is not None: daily_events[TIME] = pd.to_datetime(daily_events[TIME])
-         fig = daily_plot(df(), input.select_patient_plot(), input.plot_height_slider(), daily_events, app=True)
+         fig = daily_plot(df(), input.select_patient_plot(), input.plot_height_slider(), daily_events_ref.get(), app=True)
       elif plot_type == "Weekly (Time-Series)":
          fig = weekly_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
       elif plot_type == "Spaghetti":
