@@ -1,5 +1,4 @@
 import pandas as pd
-from preprocessing import get_interval
 import numpy as np
 from scipy.integrate import trapezoid
 import configparser
@@ -127,7 +126,8 @@ def episodes_helper(
    min_length: int, 
    end_length: int
 ) -> pd.DataFrame:
-   interval = get_interval()
+   config.read('config.ini')
+   interval = int(config["variables"]["interval"])
    timegap = lambda timedelta: timedelta.total_seconds() / 60
    episodes = pd.DataFrame()
 
@@ -197,7 +197,9 @@ def get_excursions(
    end_length: int = 15
 ) -> pd.DataFrame:
    excursions = pd.DataFrame()
-   interval = get_interval()
+
+   config.read('config.ini')
+   interval = int(config["variables"]["interval"])
    for id, data in df.groupby(ID):
       sd = data[GLUCOSE].std()
       mean = data[GLUCOSE].mean()
@@ -262,7 +264,9 @@ def get_excursions(
 
 def backwards_ROC(df: pd.DataFrame) -> pd.Series:
    data = df.copy().reset_index(drop=True).set_index(TIME)
-   return ((3 * data[GLUCOSE]) - (4 * data[GLUCOSE].shift()) + data[GLUCOSE].shift(2)) / (2 * get_interval())
+   config.read('config.ini')
+   interval = int(config["variables"]["interval"])
+   return ((3 * data[GLUCOSE]) - (4 * data[GLUCOSE].shift()) + data[GLUCOSE].shift(2)) / (2 * interval)
 
 def get_meals(df: pd.DataFrame, threshold: float, cooldown: int = 20) -> pd.DataFrame:
    meals = pd.DataFrame()
@@ -375,7 +379,9 @@ def episode_statistics(
                                       "mean hyperglycemic glucose value (level 1) per day": hyper_mean_glucose,}])
 
 def AUC(df: pd.DataFrame) -> float:
-    return trapezoid(df[GLUCOSE], dx=get_interval())
+    config.read('config.ini')
+    interval = int(config["variables"]["interval"])
+    return trapezoid(df[GLUCOSE], dx=interval)
 
 def iAUC(df: pd.DataFrame, level = float) -> float:
     data = df.copy()

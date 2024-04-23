@@ -1,8 +1,7 @@
 import pandas as pd
 import numpy as np
 import configparser
-from preprocessing import get_interval
-import line_profiler
+from multiprocessing import Pool
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -151,12 +150,16 @@ def j_index(df: pd.DataFrame) -> float:
 # n is the gap in hours
 # the resampling interval should be in minutes
 def CONGA(df: pd.DataFrame, n: int = 24) -> float:
-    period = n * (60 / get_interval())
+    config.read('config.ini')
+    interval = int(config["variables"]["interval"])
+    period = n * (60 / interval)
     return np.std(df[GLUCOSE].diff(periods=period))
 
 # lag is in days
 def MODD(df: pd.DataFrame, lag: int = 1) -> float:
-    period = lag * 24 * (60 / get_interval())
+    config.read('config.ini')
+    interval = int(config["variables"]["interval"])
+    period = lag * 24 * (60 / interval)
     return np.mean(np.abs(df[GLUCOSE].diff(periods=period)))
 
 def mean_absolute_differences(df: pd.DataFrame) -> float:
@@ -170,9 +173,12 @@ def MAG(df: pd.DataFrame) -> float:
    data = df[(df[TIME].dt.minute == (df[TIME].dt.minute).iloc[0]) & (df[TIME].dt.second == (df[TIME].dt.second).iloc[0])][GLUCOSE]
    return np.sum(data.diff().abs()) / data.size
 
-@line_profiler.profile
 def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 180) -> float:
    data = df.reset_index(drop=True)
+
+   config.read('config.ini')
+   interval = int(config["variables"]["interval"])
+   print(interval)
 
    missing = data[GLUCOSE].isnull()
    # create groups of consecutive missing values
@@ -180,7 +186,7 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 
    # group by the created groups and count the size of each group, then apply it where values are missing
    size_of_groups = data.groupby([groups, missing])[GLUCOSE].transform('size').where(missing, 0)
    # filter groups where size is greater than 0 and take their indexes
-   indexes = size_of_groups[size_of_groups.diff() > (max_gap / get_interval())].index.tolist()
+   indexes = size_of_groups[size_of_groups.diff() > (max_gap / interval)].index.tolist()
 
    if not indexes: # no gaps in data larger than max_gap
       return MAGE_helper(df, short_ma, long_ma)
@@ -195,7 +201,6 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 
          mage +=  segment_duration * MAGE_helper(segment, short_ma, long_ma)
       return mage / total_duration
 
-@line_profiler.profile
 def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    averages = pd.DataFrame()
    averages[GLUCOSE] = df[GLUCOSE]
@@ -221,8 +226,7 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
       previous_actual = glu(index-1)
       previous_average = average(index-1)
 
-      if (((not np.isnan(current_actual)) and (not np.isnan(previous_actual))) and 
-          ((not np.isnan(current_average)) and (not np.isnan(previous_average)))):
+      if not (np.isnan(current_actual) or np.isnan(previous_actual) or np.isnan(current_average) or np.isnan(previous_average)):
          if current_average * previous_average < 0:
             type = np.where(current_average < previous_average, "nadir", "peak")
             crosses_list.append({"location": index, "type": type})   
@@ -303,70 +307,71 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
       else:
          j += 1
 
-   plus_first = np.where(len(mage_plus_heights) > 0 and ((len(mage_minus_heights) == 0) or (mage_plus_tp_pairs[0][1] <= mage_minus_tp_pairs[0][0])), True, False)
+   plus_first = len(mage_plus_heights) > 0 and ((len(mage_minus_heights) == 0) or (mage_plus_tp_pairs[0][1] <= mage_minus_tp_pairs[0][0]))
    return float(np.where(plus_first, np.mean(mage_plus_heights), np.mean(np.absolute(mage_minus_heights))))
 
 def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.DataFrame:
-   interval = get_interval()
+   config.read('config.ini')
+   interval = int(config["variables"]["interval"])
    if timedelta < interval:
       raise Exception("Given timedelta must be greater than resampling interval.")
 
    positiondelta = round(timedelta / interval)
    return df[GLUCOSE].diff(periods=positiondelta) / timedelta
 
+def compute_features(id, data):
+   features = {}
+   summary = summary_stats(data)
+   features[ID] = id
+
+   features["mean"] = mean(data)
+   features["min"] = summary[0]
+   features["first quartile"] = summary[1]
+   features["median"] = summary[2]
+   features["third quartile"] = summary[3]
+   features["max"] = summary[4]
+
+   features["intrasd"] = std(data)
+   #features["intersd"] = std(dataset)
+
+   features["mean absolute differences"] = mean_absolute_differences(data)
+   features["median absolute deviation"] = median_absolute_deviation(data)
+
+   features["eA1C"] = a1c(data)
+   features["gmi"] = gmi(data)
+   features["percent time in range"] = percent_time_in_range(data)
+   features["ADRR"] = ADRR(data)
+   features["LBGI"] = LBGI(data)
+   features["HBGI"] = HBGI(data)
+   features["COGI"] = COGI(data)
+
+   features["euglycaemic GRADE"] = GRADE_eugly(data)
+   features["hyperglycaemic GRADE"] = GRADE_hyper(data)
+   features["hypoglycaemic GRADE"] = GRADE_hypo(data)
+   features["GRADE"] = GRADE(data)
+   features["GRI"] = GRI(data)
+
+   features["hyperglycemia index"] = hyper_index(data)
+   features["hypoglycemia index"] = hypo_index(data)
+   features["IGC"] = IGC(data)
+
+   features["GVP"] = GVP(data)
+   features["j-index"] = j_index(data)
+
+   features["CONGA"] = CONGA(data)
+   features["MAG"] = MAG(data)
+   features["MODD"] = MODD(data)
+   features["MAGE"] = MAGE(data)
+
+   return features
+
+
 def create_features(dataset: pd.DataFrame) -> pd.DataFrame:
-    """
-    Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
-    returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
-    """
-    df = pd.DataFrame()
-
-    for id, data in dataset.groupby(ID):
-        features = {}
-        summary = summary_stats(data)
-        features[ID] = id
-
-        features["mean"] = mean(data)
-        features["min"] = summary[0]
-        features["first quartile"] = summary[1]
-        features["median"] = summary[2]
-        features["third quartile"] = summary[3]
-        features["max"] = summary[4]
-
-        features["intrasd"] = std(data)
-        features["intersd"] = std(dataset)
-
-        features["mean absolute differences"] = mean_absolute_differences(data)
-        features["median absolute deviation"] = median_absolute_deviation(data)
-
-        features["eA1C"] = a1c(data)
-        features["gmi"] = gmi(data)
-        features["percent time in range"] = percent_time_in_range(data)
-        features["ADRR"] = ADRR(data)
-        features["LBGI"] = LBGI(data)
-        features["HBGI"] = HBGI(data)
-        features["COGI"] = COGI(data)
-
-        features["euglycaemic GRADE"] = GRADE_eugly(data)
-        features["hyperglycaemic GRADE"] = GRADE_hyper(data)
-        features["hypoglycaemic GRADE"] = GRADE_hypo(data)
-        features["GRADE"] = GRADE(data)
-        features["GRI"] = GRI(data)
-
-        features["hyperglycemia index"] = hyper_index(data)
-        features["hypoglycemia index"] = hypo_index(data)
-        features["IGC"] = IGC(data)
-
-        features["GVP"] = GVP(data)
-        features["j-index"] = j_index(data)
-
-        features["CONGA"] = CONGA(data)
-        features["MAG"] = MAG(data)
-        features["MODD"] = MODD(data)
-        features["MAGE"] = MAGE(data)
-
-        df = pd.concat([df, pd.DataFrame.from_records([features])])
-
-    df = df.set_index([ID])
-
-    return df
+   """
+   Takes in a multiindexed Pandas DataFrame containing CGM data for multiple patients/datasets, and
+   returns a single indexed Pandas DataFrame containing summary metrics in the form of one row per patient/dataset
+   """
+   with Pool() as pool:
+      features = pool.starmap(compute_features, dataset.groupby(ID))
+   features = pd.DataFrame(features).set_index([ID])
+   return features

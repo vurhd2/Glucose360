@@ -13,8 +13,6 @@ TIME = config['variables']['time']
 LOW = 40
 HIGH = 400
 
-ex = r"(([\d]+-)(?P<id>[\d]+).(?P<section>[\w]+)(.+))"
-
 def import_data(
    path: str,
    name: str = None,
@@ -36,9 +34,14 @@ def import_data(
     @param max_gap      the maximum amount of minutes a gap in the data can be interpolated 
                         (filling in a gap with a longer duration would be considered extrapolation)
     """
-    global resample_interval
-    resample_interval = interval
+    # update the config with the resampling interval the user chose
+    updated_config = config['variables'] 
+    updated_config['interval'] = str(interval)
+    config["variables"] = updated_config
+    with open('config.ini', 'w') as configfile:
+      config.write(configfile)
 
+    # get file extension of where the given path points
     ext = os.path.splitext(path)[1]
 
     # path leads to directory
@@ -207,6 +210,8 @@ def interpolate_data(df: pd.DataFrame, max_gap = int) -> pd.DataFrame:
     @param df         a DataFrame with only two columns, DateTime and Glucose Value
     @param max_gap    the maximum minute length of gaps that should be interpolated
     """
+    config.read('config.ini')
+    interval = int(config["variables"]["interval"])
 
     # based heavily on https://stackoverflow.com/questions/67128364/how-to-limit-pandas-interpolation-when-there-is-more-nan-than-the-limit
 
@@ -214,7 +219,7 @@ def interpolate_data(df: pd.DataFrame, max_gap = int) -> pd.DataFrame:
     s = s.ne(s.shift()).cumsum()
 
     m = df.groupby([s, df[GLUCOSE].isnull()])[GLUCOSE].transform('size').where(df[GLUCOSE].isnull())
-    interpolated_df = df.interpolate(method="time", limit_area="inside").mask(m >= int(max_gap / resample_interval))
+    interpolated_df = df.interpolate(method="time", limit_area="inside").mask(m >= int(max_gap / interval))
 
     return interpolated_df
 
@@ -234,12 +239,6 @@ def chunk_day(df: pd.DataFrame) -> pd.DataFrame:
     is_weekend = df[TIME].dt.dayofweek > 4
     df["Day Chunking"] = is_weekend.replace({True: "Weekend", False: "Weekday"})
     return df
-
-def get_interval():
-   """
-   Accessor function for the resampling interval (for use within other modules)
-   """
-   return resample_interval
 
 def segment_data(path: str, df: pd.DataFrame) -> pd.DataFrame:
    """
