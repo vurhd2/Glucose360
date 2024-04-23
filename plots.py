@@ -8,8 +8,6 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
-import line_profiler
-
 config = configparser.ConfigParser()
 config.read('config.ini')
 ID = config['variables']['id']
