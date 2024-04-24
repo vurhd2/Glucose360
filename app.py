@@ -265,7 +265,7 @@ def server(input, output, session):
                                time_col=input.event_time_col(), before=input.event_import_before(),
                                after=input.event_import_after(), type=input.event_type())])
          added_events[TIME] = pd.to_datetime(added_events[TIME])
-         added_events.reset_index(drop=True, inplace=True)
+         added_events = added_events.reset_index(drop=True).sort_values(by=[TIME])
          events_ref.set(added_events)
          filtered_events_ref.set(added_events)
 
