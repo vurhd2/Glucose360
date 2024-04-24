@@ -274,7 +274,9 @@ def AGP_plot(df: pd.DataFrame, id: str, height: int = 600, app=False):
     @param height    the height of the resulting plot (in pixels)
     @param app       a boolean indicating whether this function is being run within the web app or not
     """
-    if pp.get_interval() > 5:
+    config.read('config.ini')
+    interval = int(config["variables"]["interval"])
+    if interval > 5:
          raise Exception("Data needs to have measurement intervals at most 5 minutes long")
 
     data = df.loc[id]  
