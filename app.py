@@ -118,7 +118,7 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
    events_ref = reactive.Value(pd.DataFrame())
    filtered_events_ref = reactive.Value(pd.DataFrame())
-   daily_events_ref = reactive.Value(pd.DataFrame())
+   daily_events_ref = reactive.Value(None)
    fig: go.Figure = None
 
    def notify(message):
