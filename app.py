@@ -30,7 +30,7 @@ filtered_events = pd.DataFrame()
 app_ui = ui.page_fluid(
    ui.navset_pill(
       ui.nav_panel(
-         "Features",
+         "Import Data/Events",
          ui.layout_columns(
             ui.card(
                ui.input_text("id_template", "Template for ID Retrieval"),
@@ -40,8 +40,37 @@ app_ui = ui.page_fluid(
                ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
                ui.input_file("data_import", "Import Dexcom CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False),
             ),
-            ui.card(ui.input_file("split_data", "Split Data", accept=[".csv"], multiple=False))
+            ui.card(ui.input_file("split_data", "Split Data", accept=[".csv"], multiple=False)),
          ),
+         ui.layout_columns(
+            ui.card(
+               ui.output_ui("patient_import_event"),
+               ui.layout_columns(
+                  ui.card(
+                     "Bulk Import Events",
+                     ui.input_text("event_day_col", "Name of Day Column", "Day"),
+                     ui.input_text("event_time_col", "Name of Time Column", "Time"),
+                     ui.input_numeric("event_import_before", "# of Minutes Before Timestamp to Include", 60, min=0),
+                     ui.input_numeric("event_import_after", "# of Minutes After Timestamp to Include", 60, min=0),
+                     ui.input_text("event_type", "Type of Events Being Imported", "Cronometer Meal"),
+                     ui.input_file("event_import", "Import Events (.zip file)", accept=[".zip", ".csv"], multiple=False)
+                  ),
+                  ui.card(
+                     "Add Singular Event",
+                     ui.input_date("add_event_date", "Date"),
+                     ui.input_text("add_event_time", "Time"),
+                     ui.input_numeric("add_event_before", "# of Minutes Before Time to Include", 60, min=0),
+                     ui.input_numeric("add_event_after", "# of Minutes After Time to Include", 60, min=0),
+                     ui.input_text("add_event_type", "Type"),
+                     ui.input_text("add_event_description", "Description"),
+                     ui.input_action_button("add_event_button", "Add Event")
+                  )
+               )
+            )
+         )
+      ),
+      ui.nav_panel(
+         "Features",
          ui.card(
             ui.output_data_frame("features_table"),
             ui.download_button("download_features", "Download Features as .csv file")
@@ -66,47 +95,22 @@ app_ui = ui.page_fluid(
          ui.output_ui("patient_event"),
          ui.layout_columns(
             ui.card(
-               ui.layout_columns(
-                  ui.card(
-                     "Bulk Import Events",
-                     ui.input_text("event_day_col", "Name of Day Column", "Day"),
-                     ui.input_text("event_time_col", "Name of Time Column", "Time"),
-                     ui.input_numeric("event_import_before", "# of Minutes Before Timestamp to Include", 60, min=0),
-                     ui.input_numeric("event_import_after", "# of Minutes After Timestamp to Include", 60, min=0),
-                     ui.input_text("event_type", "Type of Events Being Imported", "Cronometer Meal"),
-                     ui.input_file("event_import", "Import Events (.zip file)", accept=[".zip", ".csv"], multiple=False)
-                  ),
-                  ui.card(
-                     "Add Singular Event",
-                     ui.input_date("add_event_date", "Date"),
-                     ui.input_text("add_event_time", "Time"),
-                     ui.input_numeric("add_event_before", "# of Minutes Before Time to Include", 60, min=0),
-                     ui.input_numeric("add_event_after", "# of Minutes After Time to Include", 60, min=0),
-                     ui.input_text("add_event_type", "Type"),
-                     ui.input_text("add_event_description", "Description"),
-                     ui.input_action_button("add_event_button", "Add Event")
-                  )
-               )
+               ui.output_ui("ui_event_row"),
+               ui.input_select("edit_event_col", "Column to Edit", [TIME, BEFORE, AFTER, TYPE, DESCRIPTION]),
+               ui.input_text("edit_event_text", "Value to Replace With"),
+               ui.input_action_button("edit_event", "Edit Event")
             ),
             ui.card(ui.output_data_frame("event_metrics_table")),
          ),
          ui.layout_columns(
             ui.card(
-               ui.card(
-                  ui.output_ui("ui_event_row"),
-                  ui.input_select("edit_event_col", "Column to Edit", [TIME, BEFORE, AFTER, TYPE, DESCRIPTION]),
-                  ui.input_text("edit_event_text", "Value to Replace With"),
-                  ui.input_action_button("edit_event", "Edit Event")
+               ui.output_ui("ui_event_select"),
+               tags.div(
+                  tags.div(ui.output_data_frame("event_filters"), style="height: 100%"),
+                  ui.output_data_frame("events_table"),
+                  style="display: flex;"
                ),
-               ui.card(
-                  ui.output_ui("ui_event_select"),
-                  tags.div(
-                     tags.div(ui.output_data_frame("event_filters"), style="height: 100%"),
-                     ui.output_data_frame("events_table"),
-                     style="display: flex;"
-                  ),
-                  ui.download_button("download_events", "Download Events in Table as .csv file")
-               )
+               ui.download_button("download_events", "Download Events in Table as .csv file")
             ),
             ui.card(output_widget("display_event_plot"))
          ),
@@ -147,6 +151,10 @@ def server(input, output, session):
    @render.ui
    def patient_plot():
       return ui.input_select("select_patient_plot", "Select Patient:", df().index.unique().tolist())
+   
+   @render.ui
+   def patient_import_event():
+      return ui.input_select("select_patient_import_event", "Select Patient to Add Events for:", df().index.unique().tolist())
    
    @render.ui
    def patient_event():
@@ -261,7 +269,7 @@ def server(input, output, session):
       file: list[FileInfo] | None = input.event_import()
       if file is not None:
          added_events = pd.concat([events_ref.get(), import_events(path=file[0]["datapath"], name=file[0]["name"].split(".")[0],
-                               id=input.select_patient_event(), day_col=input.event_day_col(),
+                               id=input.select_patient_import_event(), day_col=input.event_day_col(),
                                time_col=input.event_time_col(), before=input.event_import_before(),
                                after=input.event_import_after(), type=input.event_type())])
          added_events[TIME] = pd.to_datetime(added_events[TIME])
@@ -321,7 +329,7 @@ def server(input, output, session):
    @reactive.event(input.add_event_button)
    def add_event():
       added_event = pd.DataFrame.from_records({
-         ID: input.select_patient_event(),
+         ID: input.select_patient_import_event(),
          TIME: str(input.add_event_date()) + " " + input.add_event_time(),
          BEFORE: input.add_event_before(),
          AFTER: input.add_event_after(),
