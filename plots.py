@@ -95,7 +95,7 @@ def daily_plot(
                if (not already_rendered): rendered_types.append(type)
                fig.add_vline(x=time, row=idx, col=1, line_dash="dash", line_color=color_map[type], name=type, legendgroup=type, showlegend=(not already_rendered))"""
 
-            for _, row in day_events.iterrows():
+            for _, row in day_events.drop_duplicates(subset=[TIME, TYPE]).iterrows():
                already_rendered = (row[TYPE] in rendered_types)
                if (not already_rendered): rendered_types.append(row[TYPE])
                fig.add_shape(go.layout.Shape(
@@ -106,12 +106,10 @@ def daily_plot(
                   name=row[TYPE], legendgroup=row[TYPE], showlegend=(not already_rendered)), row=idx, col=1)
 
    fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
-
-   image_height = max((60 * len(days) * num_events), height)
-   fig.update_layout(title=f"Daily Plot for {id}", height=image_height, showlegend=True)
+   fig.update_layout(title=f"Daily Plot for {id}", height=height, showlegend=True)
 
    if save: 
-      fig.write_image(f"{id}_daily_plot.pdf", width=1500, height=image_height)
+      fig.write_image(f"{id}_daily_plot.pdf", width=1500, height=height)
       fig.write_html(f"{id}_daily_plot.html")
 
    if app: return fig
