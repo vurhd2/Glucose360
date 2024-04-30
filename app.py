@@ -230,7 +230,7 @@ def server(input, output, session):
       
       return fig
    
-   @render.download(filename="plot.zip")
+   @render.download(filename=lambda: f"{input.select_patient_plot()}_{input.select_plot()}.zip")
    def download_plot():
       global fig
       encoded_pdf = fig.to_image(format="pdf", width=1500, height=input.plot_height_slider())
