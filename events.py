@@ -201,6 +201,7 @@ def get_excursions(
    config.read('config.ini')
    interval = int(config["variables"]["interval"])
    for id, data in df.groupby(ID):
+      data.reset_index(drop=True, inplace=True)
       sd = data[GLUCOSE].std()
       mean = data[GLUCOSE].mean()
       upper = mean + (z * sd)
