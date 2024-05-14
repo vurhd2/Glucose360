@@ -249,9 +249,9 @@ def get_excursions(
 
             extrema = peaks if type == "hypo" else nadirs
             if start_index != 0:
-               start_time = extrema[extrema <= start_time].iloc[-1]
+               if not extrema[extrema <= start_time].empty: start_time = extrema[extrema <= start_time].iloc[-1]
             if end_index != data.shape[0] - 1:
-               end_time = extrema[extrema >= end_time].iloc[0]
+               if not extrema[extrema >= end_time].empty: end_time = extrema[extrema >= end_time].iloc[0]
             
             description = f"{start_time} to {end_time} {type}glycemic excursion"
             event = pd.DataFrame.from_records([{ID: id, TIME: timestamp, BEFORE: timegap(timestamp - start_time), 
