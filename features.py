@@ -166,7 +166,7 @@ def mean_absolute_differences(df: pd.DataFrame) -> float:
     return np.mean(np.abs(df[GLUCOSE].diff()))
 
 def median_absolute_deviation(df: pd.DataFrame, constant: float = 1.4826) -> float:
-    return constant * np.nanmedian(np.abs(df[GLUCOSE] - np.median(df[GLUCOSE])))
+    return constant * np.nanmedian(np.abs(df[GLUCOSE] - np.nanmedian(df[GLUCOSE])))
 
 def MAG(df: pd.DataFrame) -> float:
    df.dropna(subset=[GLUCOSE], inplace=True)
@@ -178,7 +178,6 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 
 
    config.read('config.ini')
    interval = int(config["variables"]["interval"])
-   print(interval)
 
    missing = data[GLUCOSE].isnull()
    # create groups of consecutive missing values
