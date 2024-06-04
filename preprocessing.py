@@ -3,8 +3,10 @@ import pandas as pd
 import configparser
 import zipfile, tempfile
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+config_path = os.path.join(dir_path, "config.ini")
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read(config_path)
 ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
@@ -16,23 +18,35 @@ HIGH = 400
 def import_data(
    path: str,
    name: str = None,
+   sensor: str = "dexcom",
    id_template: str = None,
-   glucose: str = "Glucose Value (mg/dL)",
-   time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
+   glucose: str = None,
+   time: str = None,
    interval: int = 5,
    max_gap: int = 45,
    output = print
 ) -> pd.DataFrame:
-    """
-    Returns a Multiindexed Pandas DataFrame containing all of the csv data found at the given path.
-    The path can lead to a directory, .zip file, or a .csv file.
-    The returned DataFrame holds columns for Timestamps and Glucose Value, and is indexed by 'id'
-    @param path         the path of the directory/zip/csv to be parsed through
-    @param glucose      the name of the column containing the glucose values in the .csv files
-    @param time         the name of the column containing the timestamps in the .csv files
-    @param interval     the resampling interval that the data should be in
-    @param max_gap      the maximum amount of minutes a gap in the data can be interpolated 
-                        (filling in a gap with a longer duration would be considered extrapolation)
+    """Returns a Multiindexed Pandas DataFrame containing all of the csv data found at the given path.
+    The path can lead to a directory, .zip file, or a .csv file. The returned DataFrame holds columns 
+    for timestamps and glucose values, and is indexed by patient identifications
+
+    :param path: the path of the directory/zip/csv to be parsed through
+    :type path: str
+    :param sensor: the CGM device model used (either dexcom, freestyle libre pro, or freestyle libre 2 / freestyle libre 3), defaults to 'dexcom'
+    :type sensor: str, optional
+    :param id_template: regex dictating how to parse each CSV file's name for the proper patient identification, defaults to None
+    :type id_template: str, optional
+    :param glucose: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type glucose: str, optional
+    :param time: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type time: str, optional
+    :param interval: the resampling interval (in minutes) that the data should follow, defaults to 5
+    :type interval: int, optional
+    :param max_gap: the maximum amount of minutes a gap in the data can be interpolated, defaults to 45 
+       (filling in a gap with a longer duration would be considered extrapolation)
+    :type max_gap: int, optional
+    :return: A Pandas DataFrame containing the preprocessed data found at the given path. This DataFrame holds columns for timestamps, glucose values, weekday/weekend chunking, and waking/sleeping time chunking.
+    :rtype: pandas.DataFrame 
     """
     # update the config with the resampling interval the user chose
     updated_config = config['variables'] 
@@ -49,7 +63,7 @@ def import_data(
        if not os.path.isdir(path):
           raise ValueError("Directory does not exist")
        else:
-          return import_directory(path, id_template, glucose, time, interval, max_gap, output)
+          return import_directory(path, sensor, id_template, glucose, time, interval, max_gap, output)
     
     # check if path leads to .zip or .csv
     if ext.lower() in [".csv", ".zip"]:
@@ -60,8 +74,7 @@ def import_data(
    
     # path leads to .csv
     if ext.lower() == ".csv":
-       df = import_csv(path, id_template, glucose, time, interval, max_gap)
-       return df.set_index(ID)
+       return import_csv(path, sensor, id_template, glucose, time, interval, max_gap)
 
     # otherwise has to be a .zip file
     with zipfile.ZipFile(path, 'r') as zip_ref:
@@ -69,24 +82,39 @@ def import_data(
       with tempfile.TemporaryDirectory() as temp_dir:
          zip_ref.extractall(temp_dir)
          dir = name or path.split("/")[-1].split(".")[0]
-         return import_directory((temp_dir + "/" + dir), id_template, glucose, time, interval, max_gap, output)
+         return import_directory((temp_dir + "/" + dir), sensor, id_template, glucose, time, interval, max_gap, output)
     
 def import_directory(
     path: str,
+    sensor: str = "dexcom",
     id_template: str = None,
-    glucose: str = "Glucose Value (mg/dL)",
-    time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
+    glucose: str = None,
+    time: str = None,
     interval: int = 5,
     max_gap: int = 45,   
     output = print
 ) -> pd.DataFrame:
-    """
-    Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
-    The DataFrame holds columns for Timestamp and Glucose Value, and is indexed by 'id'
-    @param path         the path of the directory to be parsed through
-    @param interval     the resampling interval that the data should be in
-    @param max_gap      the maximum amount of minutes a gap in the data can be interpolated 
-                        (filling in a gap with a longer duration would be considered extrapolation)
+    """Returns a Multiindexed Pandas DataFrame containing all of the csv data found at the given path.
+    The path must lead to a directory containing .csv files. The returned DataFrame holds columns 
+    for timestamps and glucose values, and is indexed by patient identifications
+
+    :param path: the path of the directory to be parsed through
+    :type path: str
+    :param sensor: the CGM device model used (either dexcom, freestyle libre pro, or freestyle libre 2 / freestyle libre 3), defaults to 'dexcom'
+    :type sensor: str, optional
+    :param id_template: regex dictating how to parse each CSV file's name for the proper patient identification, defaults to None
+    :type id_template: str, optional
+    :param glucose: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type glucose: str, optional
+    :param time: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type time: str, optional
+    :param interval: the resampling interval (in minutes) that the data should follow, defaults to 5
+    :type interval: int, optional
+    :param max_gap: the maximum amount of minutes a gap in the data can be interpolated, defaults to 45 
+       (filling in a gap with a longer duration would be considered extrapolation)
+    :type max_gap: int, optional
+    :return: A Pandas DataFrame containing the preprocessed data found at the given path. This DataFrame holds columns for timestamps, glucose values, weekday/weekend chunking, and waking/sleeping time chunking.
+    :rtype: pandas.DataFrame 
     """
     csv_files = glob.glob(path + "/*.csv")
     num_files = len(csv_files)
@@ -96,11 +124,11 @@ def import_directory(
     
     output(f"{num_files} .csv files were found in the specified directory.")
     
-    data = []
+    data: list[pd.DataFrame] = []
     num_valid_files = num_files
     for file in csv_files:
        try:
-          data.append(import_csv(file, id_template, glucose, time, interval, max_gap))
+          data.append(import_csv(file, sensor, id_template, glucose, time, interval, max_gap))
        except:
           num_valid_files -= 1
    
@@ -108,64 +136,180 @@ def import_directory(
 
     if len(data) == 0: raise Exception("CSV files found, but none were valid.")  
     df = pd.concat(data)
-    df.set_index([ID], inplace=True)
 
     output(f"{df.index.unique().size} sections were found in the imported data.")
 
     return df
 
 def import_csv(
-    path: str, 
+    path: str,
+    sensor: str = "dexcom", 
     id_template: str = None,
-    glucose: str = "Glucose Value (mg/dL)",
-    time: str = "Timestamp (YYYY-MM-DDThh:mm:ss)",
+    glucose: str = None,
+    time: str = None,
     interval: int = 5, 
-    max_gap: int = 45) -> pd.DataFrame:
+    max_gap: int = 45
+) -> pd.DataFrame:
+    """Returns a Multiindexed Pandas DataFrame containing all of the csv data found at the given path.
+    The path must lead to a .csv file. The returned DataFrame holds columns 
+    for timestamps and glucose values, and is indexed by patient identifications
+
+    :param path: the path of the csv file to be parsed through
+    :type path: str
+    :param sensor: the CGM device model used (either dexcom, freestyle libre pro, or freestyle libre 2 / freestyle libre 3), defaults to 'dexcom'
+    :type sensor: str, optional
+    :param id_template: regex dictating how to parse the CSV file's name for the proper patient identification, defaults to None
+    :type id_template: str, optional
+    :param glucose: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type glucose: str, optional
+    :param time: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type time: str, optional
+    :param interval: the resampling interval (in minutes) that the data should follow, defaults to 5
+    :type interval: int, optional
+    :param max_gap: the maximum amount of minutes a gap in the data can be interpolated, defaults to 45 
+       (filling in a gap with a longer duration would be considered extrapolation)
+    :type max_gap: int, optional
+    :return: A Pandas DataFrame containing the preprocessed data found at the given path. This DataFrame holds columns for timestamps, glucose values, weekday/weekend chunking, and waking/sleeping time chunking.
+    :rtype: pandas.DataFrame 
     """
-    Returns a pre-processed Pandas DataFrame containing the timestamp and glucose data for the csv file at the given path.
-    The DataFrame returned has three columns: Timestamps, Glucose Values, and 'id' of the patient
-    @param path      the path of the csv file to be pre-processed and read into a Pandas Dataframe
-    @param interval  the resampling interval that the data should be in
-    @param max_gap   the maximum amount of minutes a gap in the data can be interpolated 
-                     (filling in a gap with a longer duration would be considered extrapolation)
+    data = pd.DataFrame()
+    if sensor == "dexcom":
+       data = import_csv_dexcom(path, id_template, glucose, time)
+    elif sensor == "freestyle libre 2" or sensor == "freestyle libre 3":
+       data = import_csv_freestyle_libre_23(path, id_template, glucose, time)
+    elif sensor == "freestyle libre pro":
+       data = import_csv_freestyle_libre_pro(path, id_template, glucose, time)
+   
+    preprocessed_data = preprocess_data(data, interval, max_gap)
+    return preprocessed_data
+
+def import_csv_dexcom(
+    path: str,
+    id_template: str = None,
+    glucose_col: str = None,
+    time_col: str = None,
+) -> pd.DataFrame:
+    """Returns a Pandas DataFrame containing all of the Dexcom csv data found at the given path.
+    The path must lead to a .csv file containing CGM data from a Dexcom device. The returned DataFrame holds columns 
+    for timestamps, glucose values, and the patient identification
+
+    :param path: the path of the Dexcom csv file to be parsed through
+    :type path: str
+    :param id_template: regex dictating how to parse the CSV file's name for the proper patient identification, defaults to None
+    :type id_template: str, optional
+    :param glucose_col: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type glucose_col: str, optional
+    :param time_col: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type time_col: str, optional
+    :return: A Pandas DataFrame containing the raw data found at the given path. This DataFrame holds columns for timestamps, glucose values, and the patient identification.
+    :rtype: pandas.DataFrame 
     """
     df = pd.read_csv(path)
-    
-    id = retrieve_id(path.split("/")[-1], df, id_template)
+    glucose = glucose_col or "Glucose Value (mg/dL)"
+    time = time_col or "Timestamp (YYYY-MM-DDThh:mm:ss)"
+    id = retrieve_id_dexcom(path.split("/")[-1], df, id_template)
 
-    df = df.dropna(subset=[glucose])
-    df = df.replace("Low", LOW)
-    df = df.replace("High", HIGH)
-
-    df[TIME] = pd.to_datetime(df[time], format="%Y-%m-%dT%H:%M:%S")
-
-    df[GLUCOSE] = pd.to_numeric(df[glucose])
-
-    df = df[[TIME, GLUCOSE]].copy()
-    df = resample_data(df, interval, max_gap)
-    df = df.loc[df[GLUCOSE].first_valid_index():df[GLUCOSE].last_valid_index()]
-    df = chunk_day(chunk_time(df))
+    df.rename(columns={glucose: GLUCOSE, time: TIME}, inplace=True)
     df[ID] = id
-
     return df
 
-def retrieve_id(name: str, df: pd.DataFrame, id_template: str = None):
+def import_csv_freestyle_libre_23(
+   path: str,
+   id_template: str = None,
+   glucose_col: str = None,
+   time_col: str = None,  
+) -> pd.DataFrame:
+   """Returns a Pandas DataFrame containing all of the FreeStyle Libre 2 or 3 csv data found at the given path.
+    The path must lead to a .csv file containing CGM data from FreeStyle Libre 2 or FreeStyle Libre 3 devices. The returned DataFrame holds columns 
+    for timestamps, glucose values, and the patient identification
+
+    :param path: the path of the FreeStyle Libre 2 or 3 csv file to be parsed through
+    :type path: str
+    :param id_template: regex dictating how to parse the CSV file's name for the proper patient identification, defaults to None
+    :type id_template: str, optional
+    :param glucose_col: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type glucose_col: str, optional
+    :param time_col: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type time_col: str, optional
+    :return: A Pandas DataFrame containing the raw data found at the given path. This DataFrame holds columns for timestamps, glucose values, and the patient identification.
+    :rtype: pandas.DataFrame 
+    """
+   glucose = glucose_col or "Historic Glucose mg/dL"
+   time = time_col or "Device Timestamp"
+   return import_csv_freestyle_libre(path, id_template, glucose, time)
+
+def import_csv_freestyle_libre_pro(
+    path: str,
+    id_template: str = None,
+    glucose_col: str = None,
+    time_col: str = None,
+) -> pd.DataFrame:
+    """Returns a Pandas DataFrame containing all of the FreeStyle Libre Pro csv data found at the given path.
+    The path must lead to a .csv file containing CGM data from a FreeStyle Libre Pro device. The returned DataFrame holds columns 
+    for timestamps, glucose values, and the patient identification
+
+    :param path: the path of the FreeStyle Libre Pro csv file to be parsed through
+    :type path: str
+    :param id_template: regex dictating how to parse the CSV file's name for the proper patient identification, defaults to None
+    :type id_template: str, optional
+    :param glucose_col: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type glucose_col: str, optional
+    :param time_col: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+    :type time_col: str, optional
+    :return: A Pandas DataFrame containing the raw data found at the given path. This DataFrame holds columns for timestamps, glucose values, and the patient identification.
+    :rtype: pandas.DataFrame 
+    """
+    glucose = glucose_col or "Historic Glucose(mg/dL)"
+    time = time_col or "Meter Timestamp"
+    return import_csv_freestyle_libre(path, id_template, glucose, time)
+
+def import_csv_freestyle_libre(
+   path: str,
+   id_template: str,
+   glucose_col: str,
+   time_col: str
+) -> pd.DataFrame:
+   """Returns a Pandas DataFrame containing all of the FreeStyle Libre csv data found at the given path.
+    The path must lead to a .csv file containing CGM data from FreeStyle Libre 2/3/Pro devices. The returned DataFrame holds columns 
+    for timestamps, glucose values, and the patient identification. 
+
+    :param path: the path of the FreeStyle Libre csv file to be parsed through
+    :type path: str
+    :param id_template: regex dictating how to parse the CSV file's name for the proper patient identification
+    :type id_template: str
+    :param glucose_col: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used)
+    :type glucose_col: str
+    :param time_col: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used)
+    :type time_col: str
+    :return: A Pandas DataFrame containing the raw data found at the given path. This DataFrame holds columns for timestamps, glucose values, and the patient identification.
+    :rtype: pandas.DataFrame 
+    """
+   id = pd.read_csv(path, nrows=1)["Patient report"].iloc[0] if not id_template else id_from_filename(path.split("/")[-1], id_template)
+   df = pd.read_csv(path, skiprows=2)
+
+   df.rename(columns={glucose_col: GLUCOSE, time_col: TIME}, inplace=True)
+   df[ID] = id
+   return df
+
+def retrieve_id_dexcom(name: str, df: pd.DataFrame, id_template: str = None) -> str:
+   """Returns the appropriate identification for the given raw Dexcom CGM data based on the given template.
+   If the template is None, the identification will be pulled from the patient information fields from within the CSV.
+   Otherwise, the filename will be parsed accordingly.
+
+   :param name: the name of the file to parse for an identification
+   :type name: str
+   :param df: a Pandas DataFrame containing the raw data from a Dexcom CSV file
+   :type df: pandas.DataFrame
+   :param id_template: regex indicating how to parse the filename for the identification, defaults to None
+   :type id_template: str, optional
+   :return: the proper identification for the raw data in the given dataframe
+   :rtype: str
+   """
    if id_template and "first" not in id_template and "last" not in id_template and "patient_identifier" not in id_template:
       # need to parse file name for id
-      import re
-      pattern = re.compile(fr"{id_template}")
-      match = pattern.search(name)
-      if match is None:
-         raise Exception("The RegEx ID template passed does not match the file name.")
-      id = str(match.group("id"))
-      try: 
-         section = str(match.group("section"))
-         id += f" ({section})"
-      except:
-         print(f"'Section' not defined for patient {id}.")
-      return id
+      return id_from_filename(name, id_template)
 
-   # use csv fields for id instead
+   # use Dexcom fields for id instead
    first = df["Patient Info"].iloc[0]
    last = df["Patient Info"].iloc[1]
    patient_identifier = df["Patient Info"].iloc[2]
@@ -173,19 +317,83 @@ def retrieve_id(name: str, df: pd.DataFrame, id_template: str = None):
    if id_template: id = id_template.format(first=first, last=last, patient_identifier=patient_identifier)
    return id
 
+def id_from_filename(name: str, id_template: str):
+   """Parses the given filename for an identification using a regex template.
+
+   :param name: the filename to parse for an identification
+   :type name: str
+   :param id_template: regex indicating how to parse the filename for the identification
+   :type id_template: str
+   :return: the identification from the filename
+   :rtype: str
+   """
+   import re
+   pattern = re.compile(fr"{id_template}")
+   match = pattern.search(name)
+   if match is None:
+      raise Exception("The RegEx ID template passed does not match the file name.")
+   id = str(match.group("id"))
+   try: 
+      section = str(match.group("section"))
+      id += f" ({section})"
+   except:
+      print(f"'Section' not defined for patient {id}.")
+   return id
+
+def preprocess_data(
+   df: pd.DataFrame,
+   interval: int,
+   max_gap: int
+) -> pd.DataFrame:
+   """Returns a Pandas DataFrame containing the preprocessed CGM data within the given dataframe.
+   As part of the preprocessing phase, the data will be converted into the proper data types, resampled, interpolated, chunked, and
+   indexed by identification (alongside all 'Low's and 'High's being replaced and all edge null values being dropped)
+   
+   :param df: the Pandas DataFrame containing the CGM data to preprocess
+   :type df: pandas.DataFrame
+   :param interval: the resampling interval (in minutes) the CGM data should follow
+   :type interval: int
+   :param max_gap: the maximum duration (in minutes) of a gap in the data that should be interpolated
+   :type max_gap: int
+   :return: A Pandas DataFrame containing the preprocessed CGM data. This DataFrame is indexed by identification and holds columns for
+      timestamps, glucose values, day chunking, and time chunking.
+   :rtype: pandas.DataFrame 
+   """
+   df = df.dropna(subset=[GLUCOSE])
+   df = df.replace("Low", LOW)
+   df = df.replace("High", HIGH)
+   df.reset_index(drop=True, inplace=True)
+
+   df[TIME] = pd.to_datetime(df[TIME])
+   df[GLUCOSE] = pd.to_numeric(df[GLUCOSE])
+
+   df = df[[TIME, GLUCOSE, ID]].copy()
+   df = resample_data(df, interval, max_gap)
+   df = df.loc[df[GLUCOSE].first_valid_index():df[GLUCOSE].last_valid_index()]
+   df = chunk_day(chunk_time(df))
+   df.set_index(ID, inplace=True)
+   return df
+
 def resample_data(df: pd.DataFrame, minutes: int = 5, max_gap: int = 45) -> pd.DataFrame:
-    """
-    Resamples and (if needed) interpolates the given default-indexed DataFrame.
+    """Resamples and (if needed) interpolates the given default-indexed DataFrame.
     Used mostly to preprocess the data in the csv files being imported in import_csv().
-    @param df         the DataFrame to be resampled and interpolated
-    @param minutes    the length of the interval to be resampled into (in minutes)
+
+    :param df: the DataFrame to be resampled and interpolated
+    :type df: pandas.DataFrame
+    :param minutes: the length of the interval to be resampled into (in minutes), defaults to 5
+    :type minutes: int
+    :param max_gap: the maximum duration (in minutes) of gaps that should be interpolated, defaults to 45
+    :type max_gap: int
+    :return: A Pandas DataFrame containing the resampled and interpolated. This DataFrame holds columns for timestamps, glucose values, and the patient identification.
+    :rtype: pandas.DataFrame
     """
+    id = df.at[0, ID]
+
     # Sort the DataFrame by datetime
     resampled_df = df.sort_values(by=[TIME])
     resampled_df = resampled_df.set_index(TIME)
 
     interval = str(minutes) + "T"
-    
     # generate the times that match the frequency
     resampled_df = resampled_df.asfreq(interval)
     # add in the original points that don't match the frequency (just for linear time-based interpolation)
@@ -199,16 +407,21 @@ def resample_data(df: pd.DataFrame, minutes: int = 5, max_gap: int = 45) -> pd.D
     
     # now that the values have been interpolated, remove the points that don't match the frequency
     resampled_df = resampled_df.asfreq(interval)
+    resampled_df[ID] = id # resampled data points might have empty ID values
     resampled_df.reset_index(inplace=True)
 
     return resampled_df
 
-def interpolate_data(df: pd.DataFrame, max_gap = int) -> pd.DataFrame:
-    """
-    Only linearly interpolates NaN glucose values for time gaps that are less than the given number of minutes.
+def interpolate_data(df: pd.DataFrame, max_gap: int) -> pd.DataFrame:
+    """Only linearly interpolates NaN glucose values for time gaps that are less than the given number of minutes.
     Used mainly in preprocessing for csv files that are being imported in import_csv().
-    @param df         a DataFrame with only two columns, DateTime and Glucose Value
-    @param max_gap    the maximum minute length of gaps that should be interpolated
+    
+    :param df: the Pandas DataFrame containing the CGM data to interpolate
+    :type df: pandas.DataFrame
+    :param max_gap: the maximum minute length of gaps that should be interpolated
+    :type max_gap: int
+    :return: a Pandas DataFrame with interpolated CGM data
+    :rtype: pandas.DataFrame
     """
     config.read('config.ini')
     interval = int(config["variables"]["interval"])
@@ -224,8 +437,12 @@ def interpolate_data(df: pd.DataFrame, max_gap = int) -> pd.DataFrame:
     return interpolated_df
 
 def chunk_time(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Adds a new column specifying whether the values occur during a waking or sleeping period
+    """Adds a new column to the given DataFrame specifying whether the values occur during a waking or sleeping period
+
+    :param df: the Pandas DataFrame to add the new column to (must contain a column for timestamps)
+    :type df: pandas.DataFrame
+    :return: the Pandas DataFrame with the added column for time chunking
+    :rtype: pandas.DataFrame
     """
     times = df[TIME] - df[TIME].dt.normalize()
     is_waking = (times >= pd.Timedelta(hours=8)) & (times <= pd.Timedelta(hours=22))
@@ -233,16 +450,26 @@ def chunk_time(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def chunk_day(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Adds a new column specifying whether the values occur during the week or during the weekend
+    """Adds a new column to the given DataFrame specifying whether the values occur during a weekday or the weekend
+
+    :param df: the Pandas DataFrame to add the new column to (must contain a column for timestamps)
+    :type df: pandas.DataFrame
+    :return: the Pandas DataFrame with the added column for day chunking
+    :rtype: pandas.DataFrame
     """
     is_weekend = df[TIME].dt.dayofweek > 4
     df["Day Chunking"] = is_weekend.replace({True: "Weekend", False: "Weekday"})
     return df
 
 def segment_data(path: str, df: pd.DataFrame) -> pd.DataFrame:
-   """
-   Splits patients' data into multiple segments based on a given .csv file containing ID's and DateTimes
+   """Splits patients' data into multiple segments based on a given .csv file containing ID's and DateTimes
+
+   :param path: path of the .csv file containing identifications and timestamps indicating where to split the given DataFrame
+   :type path: str
+   :param df: the DataFrame to split based on the given .csv file
+   :type df: pandas.DataFrame
+   :return: a Pandas DataFrame with the data split accordingly
+   :rtype: pandas.DataFrame
    """
    segments = pd.read_csv(path)
    segments[TIME] = pd.to_datetime(segments[TIME])

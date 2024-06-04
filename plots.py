@@ -8,8 +8,16 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
+from pyppeteer import launch
+import asyncio
+import io, os
+
+from features import percent_time_in_range, mean, CV, GMI
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
+config_path = os.path.join(dir_path, "config.ini")
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read(config_path)
 ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
@@ -21,14 +29,20 @@ DESCRIPTION = config['variables']['description']
 def daily_plot_all(
     df: pd.DataFrame,
     events: pd.DataFrame = None,
-    save: bool = False,
+    save: str = None,
     height: int = 2000
 ):
-    """
-    Graphs (and possibly saves) daily plots for all of the patients in the given DataFrame
-    @param df         a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-    @param events     a DataFrame containing event timeframes for some (or all) of the given patients
-    @param height
+    """Graphs daily plots for all of the patients in the given DataFrame. 
+    Also saves these plots as PDFs and HTMLs if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param events: a DataFrame containing any events to mark on the daily plots, defaults to None
+    :type events: 'pandas.DataFrame', optional
+    :param save: path of the location where the saved PDF and HTML versions of the plots are saved, defaults to None
+    :type save: str, optional 
+    :param height: the height (in pixels) of the resulting plot(s), defaults to 2000
+    :type height: int, optional
     """
     for id, data in df.groupby(ID):
         daily_plot(data, id, height, events, save)
@@ -41,11 +55,23 @@ def daily_plot(
    save: bool = False,
    app: bool = False
 ):
-   """
-   Only graphs (and possibly saves) a daily plot for the given patient
-   @param df   a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-   @param id   the id of the patient whose data is graphed
-   @param events  a DataFrame containing event timeframes for some (or all) of the given patients
+   """Graphs a daily (time-series) plot for the given patient within the given DataFrame. 
+    Also saves this plot as both a PDF and HTML file if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param id: the identification of the patient whose CGM data to plot within the given DataFrame
+    :type id: str
+    :param events: a DataFrame containing any events to mark on the daily plots, defaults to None
+    :type events: 'pandas.DataFrame', optional
+    :param save: path of the location where the saved PDF and HTML versions of the plot are saved, defaults to None
+    :type save: str, optional 
+    :param height: the height (in pixels) of the resulting plot, defaults to 2000
+    :type height: int, optional
+    :param app: boolean indicating whether to return the Plotly figure instead of rendering it (used mainly within the web application), defaults to False
+    :type app: bool, optional
+    :return: None if app is False, otherwise the Plotly figure
+    :rtype: 'plotly.graph_objects.Figure' | None
    """
    show_events = not (events is None or events[events[ID] == id].empty)
    data = df.loc[id].copy()
@@ -72,6 +98,7 @@ def daily_plot(
    for idx, (day, dataset) in enumerate(data.groupby("Day"), start=1):
       fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day), showlegend=False), row=idx, col=1)
       fig.update_xaxes(range=[pd.Timestamp(day) - offset, pd.Timestamp(day) + pd.Timedelta(days=1) + offset], row=idx, col=1)
+      fig.update_yaxes(title_text="Glucose Value (mg/dL)", row=idx, col=1)
 
       if show_events:
          day_events = events[(events[TIME].dt.date == day) & (events[ID] == id)].sort_values(TIME)
@@ -116,27 +143,37 @@ def daily_plot(
    fig.show()
 
 def event_plot_all(df: pd.DataFrame, id: str, events: pd.DataFrame, type: str):
-    """
-    Displays plots for all events of the given type for the given patient
-    @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-    @param id        the 'id' of the patient for whom the event plots should be graphed
-    @param events    a DataFrame containing event timeframes as per the usual structure
-    @param type      the type of events for which plots should be generated     
+    """Graphs all event plots of a certain type for the given patient within the given DataFrame. 
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param id: the identification of the patient whose CGM data to plot within the given DataFrame
+    :type id: str
+    :param events: a DataFrame containing events to be plotted, defaults to None
+    :type events: 'pandas.DataFrame'
+    :param type: the type of events to plot
+    :type type: str
     """
     relevant_events = events[(events[ID] == id) & (events[TYPE] == type)]
     for index, event in relevant_events.iterrows():
         event_plot(df, id, event, relevant_events)
 
 def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame = None, app: bool = False):
-   """
-   Generates a single event plot for the given patient and event
-   @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-   @param id        the 'id' of the patient for whom the event plot should be graphed
-   @param event     a Pandas Series containing the event that should be plotted
-   @param events    a DataFrame containing event timeframes as per the usual structure
-                    (optional, if passed will just display vertical lines for all relevant events too)
-   @param app       if this function is being run through the web app (should not be touched by users)     
-   """
+   """Graphs an event plot for the given patient within the given DataFrame. 
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param id: the identification of the patient whose CGM data to plot within the given DataFrame
+    :type id: str
+    :param event: the event to be displayed
+    :type event: 'pandas.Series'
+    :param events: a DataFrame containing any extra events to be marked within the event plot, defaults to None
+    :type events: 'pandas.DataFrame', optional
+    :param app: boolean indicating whether to return the Plotly figure instead of rendering it (used mainly within the web application), defaults to False
+    :type app: bool, optional
+    :return: None if app is False, otherwise the Plotly figure
+    :rtype: 'plotly.graph_objects.Figure' | None
+    """
    if event[ID] != id: raise Exception("Given event does not match the 'id' given.")
    data = df.loc[id].copy()
    event[TIME] = pd.to_datetime(event[TIME])
@@ -155,6 +192,13 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
    fig.show()
 
 def create_event_lines(fig: go.Figure, events: pd.DataFrame):
+   """Marks vertical lines within the given plotly Figure for the given events
+
+   :param fig: the plotly figure to mark vertical lines in
+   :type fig: plotly.graph_objects.Figure
+   :param events: Pandas DataFrame containing vevents to mark
+   :type events: pandas.DataFrame''
+   """
    event_types = events[TYPE].unique()
    events[TIME] = pd.to_datetime(events[TIME])
    with open('event_colors.json') as colors_file:
@@ -170,22 +214,36 @@ def create_event_lines(fig: go.Figure, events: pd.DataFrame):
          if (not already_rendered): rendered_types.append(type)
          fig.add_vline(x=time, line_dash="dash", line_color=color_map[type], name=type, legendgroup=type, showlegend=(not already_rendered))
 
-def weekly_plot_all(df: pd.DataFrame, height: int = 1000):
-   """
-   Displays Weekly (Time-Series) Plots for each patient in the given DataFrame
-   @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-   @param height    the height of the resulting plot (in pixels)
+def weekly_plot_all(df: pd.DataFrame, save: str = None, height: int = 1000):
+   """Graphs weekly plots for all of the patients within the given DataFrame. 
+    Also saves these plots as PDF and HTML files if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param save: path of the location where the saved PDF and HTML versions of the plots are saved, defaults to None
+    :type save: str, optional 
+    :param height: the height (in pixels) of the resulting plot(s), defaults to 1000
+    :type height: int, optional
    """
    for id, data in df.groupby(ID):
       weekly_plot(data, id, height)
 
-def weekly_plot(df: pd.DataFrame, id: str, height: int = 1000, app = False):
-   """
-   Displays a Weekly (Time-Series) Plot for only the given patient in the DataFrame
-   @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-   @param id        the id of the single patient whose data is being graphed
-   @param height    the height of the resulting plot (in pixels)
-   @param app       a boolean indicating whether this function is being run within the web app or not
+def weekly_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 1000, app = False):
+   """Graphs a weekly (time-series) plot for the given patient within the given DataFrame. 
+    Also saves this plot as a PDF and HTML if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param id: the identification of the patient whose CGM data to plot within the given DataFrame
+    :type id: str
+    :param save: path of the location where the saved PDF and HTML versions of the plots are saved, defaults to None
+    :type save: str, optional 
+    :param height: the height (in pixels) of the resulting plot, defaults to 1000
+    :type height: int, optional
+    :param app: boolean indicating whether to return the Plotly figure instead of rendering it (used mainly within the web application), defaults to False
+    :type app: bool, optional
+    :return: None if app is False, otherwise the Plotly figure
+    :rtype: 'plotly.graph_objects.Figure' | None
    """
    data = df.loc[id].reset_index().copy()
    data.set_index(TIME, inplace=True)
@@ -221,27 +279,43 @@ def weekly_plot(df: pd.DataFrame, id: str, height: int = 1000, app = False):
    if app: return fig
    fig.show()
 
-def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, height: int = 600):
-    """
-    Sequentially produces spaghetti plots for all the given patients
-    @param df         a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-    @param chunk_day  a boolean indicating whether to split weekdays and weekends
-    @param height     the height of the resulting plot (in pixels)
-    """
+def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, save: str = None, height: int = 600):
+    """Graphs spaghetti plots for all patients within the given DataFrame. 
+    Also saves these plots as PDF and HTML files if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param chunk_day: boolean indicating whether to create separate subplots based on whether the data occurred on a weekday or during the weekend
+    :type chunk_day: bool, optional
+    :param save: path of the location where the saved PDF and HTML versions of the plots are saved, defaults to None
+    :type save: str, optional 
+    :param height: the height (in pixels) of the resulting plot(s), defaults to 600
+    :type height: int, optional
+   """
     for id, data in df.groupby(ID):
         spaghetti_plot(data, id, chunk_day, height)
 
 def spaghetti_plot(
-    df: pd.DataFrame, id: str, chunk_day: bool = False, height: int = 600, app=False
+    df: pd.DataFrame, id: str, chunk_day: bool = False, save: str = None, height: int = 600, app=False
 ):
-    """
-    Graphs a spaghetti plot for the given patient
-    @param df           a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns
-    @param id           the id of the patient whose data should be plotted
-    @param chunk_day    a boolean indicating whether to split weekdays and weekends
-    @param height       the height of the resulting plot (in pixels)
-    @param app          a boolean indicating whether this function is being run within the web app or not
-    """
+    """Graphs a spaghetti plot for the given patient within the given DataFrame. 
+    Also saves this plot as both a PDF and HTML file if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param id: the identification of the patient whose CGM data to plot within the given DataFrame
+    :type id: str
+    :param chunk_day: boolean indicating whether to create separate subplots based on whether the data occurred on a weekday or during the weekend
+    :type chunk_day: bool, optional
+    :param save: path of the location where the saved PDF and HTML versions of the plots are saved, defaults to None
+    :type save: str, optional 
+    :param height: the height (in pixels) of the resulting plot(s), defaults to 600
+    :type height: int, optional
+    :param app: boolean indicating whether to return the Plotly figure instead of rendering it (used mainly within the web application), defaults to False
+    :type app: bool, optional
+    :return: None if app is False, otherwise the Plotly figure
+    :rtype: 'plotly.graph_objects.Figure' | None
+   """
     data = df.loc[id].copy()
     data["Day"] = data[TIME].dt.date
     times = data[TIME] - data[TIME].dt.normalize()
@@ -254,33 +328,47 @@ def spaghetti_plot(
     if app: return fig
     fig.show()
 
-def AGP_plot_all(df: pd.DataFrame, height: int = 600):
-    """
-    Displays AGP Plots for each patient in the given DataFrame
-    @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-    @param height    the height of the resulting plot (in pixels)
-    """
+def AGP_plot_all(df: pd.DataFrame, height: int = 600, save: str = None):
+    """Graphs AGP-report style plots for all of the patients within the given DataFrame. 
+    Also saves these plots as both PDF and HTML files if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param save: path of the location where the saved PDF and HTML versions of the plot are saved, defaults to None
+    :type save: str, optional 
+    :param height: the height (in pixels) of the resulting plot, defaults to 600
+    :type height: int, optional
+   """
     for id, data in df.groupby(ID):
         AGP_plot(data, id, height)
 
 
-def AGP_plot(df: pd.DataFrame, id: str, height: int = 600, app=False):
-    """
-    Displays an AGP Plot for only the given patient in the DataFrame
-    @param df        a Multiindexed DataFrame grouped by 'id' and containing DateTime and Glucose columns containing all patient data
-    @param id        the id of the single patient whose data is being graphed
-    @param height    the height of the resulting plot (in pixels)
-    @param app       a boolean indicating whether this function is being run within the web app or not
-    """
+def AGP_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 600, app=False):
+    """Graphs AGP-report style plots for the given patient within the given DataFrame. 
+    Also saves this plot as both a PDF and HTML file if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to plot
+    :type df: 'pandas.DataFrame'
+    :param id: the identification of the patient whose CGM data to plot within the given DataFrame
+    :type id: str
+    :param save: path of the location where the saved PDF and HTML versions of the plot are saved, defaults to None
+    :type save: str, optional 
+    :param height: the height (in pixels) of the resulting plot, defaults to 600
+    :type height: int, optional
+    :param app: boolean indicating whether to return the Plotly figure instead of rendering it (used mainly within the web application), defaults to False
+    :type app: bool, optional
+    :return: None if app is False, otherwise the Plotly figure
+    :rtype: 'plotly.graph_objects.Figure' | None
+   """
     config.read('config.ini')
     interval = int(config["variables"]["interval"])
     if interval > 5:
          raise Exception("Data needs to have measurement intervals at most 5 minutes long")
 
-    data = df.loc[id]  
+    data = df.loc[id].copy()  
     data.reset_index(inplace=True)
 
-    data[[TIME, GLUCOSE]] = pp.resample_data(data[[TIME, GLUCOSE]])
+    data[[TIME, GLUCOSE, ID]] = pp.resample_data(data[[TIME, GLUCOSE, ID]])
     times = data[TIME] - data[TIME].dt.normalize()
     # need to be in a DateTime format so seaborn can tell how to scale the x axis labels below
     data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
@@ -315,3 +403,90 @@ def AGP_plot(df: pd.DataFrame, id: str, height: int = 600, app=False):
 
     if app: return fig
     fig.show()
+
+async def generate_pdf(html_content: str, output_path: str = None):
+   browser = await launch()
+   page = await browser.newPage()
+   await page.setContent(html_content)
+   await page.waitForSelector("#main-content")
+   await asyncio.sleep(2)
+
+   pdf_options = {"format": "A4"}
+   if output_path: pdf_options['path'] = output_path
+   pdf_content = await page.pdf(pdf_options)
+   await browser.close()
+   return pdf_content
+
+def AGP_report(df: pd.DataFrame, id: str, path: str = None):
+   """Creates an AGP-report for the given patient within the given DataFrame. 
+    Also saves this plot as a PDF file if passed a valid path.
+
+    :param df: the DataFrame (following package guidelines) containing the CGM data to report on
+    :type df: 'pandas.DataFrame'
+    :param id: the identification of the patient whose CGM data to report on
+    :type id: str
+    :param path: path of the location where the saved PDF version of the plot is saved, defaults to None
+    :type path: str, optional 
+    :return: the AGP-report in bytestring form if path is False, otherwise None
+    :rtype: 'bytes' | None
+   """
+   fig = make_subplots(rows = 1, cols = 2, specs=[[{"type": "bar"}, {"type": "table"}]])
+   
+   patient_data = df.loc[id]
+   TIR = {"< 54 mg/dL": percent_time_in_range(patient_data, 0, 53),
+                       "54 - 69 mg/dL": percent_time_in_range(patient_data, 54, 69),
+                       "70 - 180 mg/dL": percent_time_in_range(patient_data, 70, 180),
+                       "181 - 250 mg/dL": percent_time_in_range(patient_data, 181, 250),
+                       "> 250 mg/dL": percent_time_in_range(patient_data, 251, 400)}
+   
+   COLORS = {"< 54 mg/dL": "rgba(151,34,35,255)",
+                       "54 - 69 mg/dL": "rgba(229,43,23,255)",
+                       "70 - 180 mg/dL": "rgba(82,173,79,255)",
+                       "181 - 250 mg/dL": "rgba(250,192,3,255)",
+                       "> 250 mg/dL": "rgba(241,136,64,255)"}
+   
+   fig.add_trace(go.Bar(name="< 54 mg/dL", x=["TIR"], y=[TIR["< 54 mg/dL"]], marker=dict(color=COLORS["< 54 mg/dL"])), row=1, col=1)
+   fig.add_trace(go.Bar(name="54 - 69 mg/dL", x=["TIR"], y=[TIR["54 - 69 mg/dL"]], marker=dict(color=COLORS["54 - 69 mg/dL"])), row=1, col=1)
+   fig.add_trace(go.Bar(name="70 - 180 mg/dL", x=["TIR"], y=[TIR["70 - 180 mg/dL"]], marker=dict(color=COLORS["70 - 180 mg/dL"])), row=1, col=1)
+   fig.add_trace(go.Bar(name="181 - 250 mg/dL", x=["TIR"], y=[TIR["181 - 250 mg/dL"]], marker=dict(color=COLORS["181 - 250 mg/dL"])), row=1, col=1)
+   fig.add_trace(go.Bar(name="> 250 mg/dL", x=["TIR"], y=[TIR["> 250 mg/dL"]], marker=dict(color=COLORS["> 250 mg/dL"])), row=1, col=1)
+   fig.update_layout(barmode='stack')
+   
+   ave_glucose = mean(patient_data)
+   gmi = GMI(patient_data)
+   cv = CV(patient_data)
+
+   days = patient_data[TIME].dt.date
+   table_body = [["Test Patient ID:", f"{len(days.unique())} Days:", "Average Glucose (mg/dL):", "Glucose Management Indicator:", "Glucose Variability:"], 
+                 [id, f"{days.iloc[0]} to {days.iloc[-1]}", str(ave_glucose), str(gmi), str(cv)]]
+   fig.add_trace(go.Table(cells=dict(values=table_body,align=['left', 'center'],font=dict(size=10))), row=1, col=2)
+   
+   agp = AGP_plot(df, id, app=True); 
+   weekly = weekly_plot(df, id, app=True); 
+
+   header_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
+   agp_html = agp.to_html(full_html=False, include_plotlyjs=False)
+   weekly_html = weekly.to_html(full_html=False, include_plotlyjs=False)
+
+   html_template = f"""
+   <!DOCTYPE html>
+   <html>
+   <head>
+      <title>Combined Plots</title>
+   </head>
+   <body>
+      <h1>Visual Analysis of CGM Data</h1>
+      {header_html}
+      {agp_html}
+      {weekly_html}
+   </body>
+   </html>
+   """
+
+   with open(os.path.join(path, "debug.html"), "w") as f:
+      f.write(html_template)
+
+   if not path:
+      return asyncio.run(generate_pdf(html_template))
+      
+   asyncio.run(generate_pdf(html_template, os.path.join(path, f"{id}_AGP_Report.pdf")))
