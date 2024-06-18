@@ -5,8 +5,10 @@ import configparser
 import glob, os, zipfile, tempfile
 import math
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+config_path = os.path.join(dir_path, "config.ini")
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read(config_path)
 ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
@@ -24,16 +26,25 @@ def import_events(
    before: int = 60,
    after: int = 60,
    type: str = "imported event"
-):
-   """
-   Bulk imports events from .csv files within the given directory
-   @param path       the path of the directory to import from
-   @param id         the ID of the patient that the imported events belong to
-   @param day_col    the name of the column specifying the day the event occurred (year, month, and specific day)
-   @param time_col   the name of the column specifying what time during the day the event occurred
-   @param before     the amount of minutes to also look at before the event timestamp
-   @param after      the amount of minutes to also look at after the event timestamp
-   @param type       the type of event all the imported events are
+) -> pd.DataFrame:
+   """Bulk imports events from standalone .csv files or from those within a given directory or .zip file
+   
+   :param path: the path of the directory/zip/csv to import from
+   :type path: str
+   :param id: the identification of the patient that the imported events belong to
+   :type id: str
+   :param day_col: the name of the column specifying the day the event occurred (year, month, and specific day), defaults to 'Day'
+   :type day_col: str, optional
+   :param time_col: the name of the column specifying what time during the day the event occurred, defaults to 'Time'
+   :type time_col: str, optional
+   :param before: the amount of minutes to also look at before the event timestamp, defaults to 60
+   :type before: int, optional
+   :param after: the amount of minutes to also look at after the event timestamp, defaults to 60
+   :type after: int, optional
+   :param type: the type of event to classify all the imported events as, defaults to 'imported event'
+   :type type: str, optional
+   :return: a Pandas DataFrame containing all the imported events
+   :rtype: 'pandas.DataFrame'
    """
    ext = os.path.splitext(path)[1]
 
@@ -72,12 +83,25 @@ def import_events_directory(
    after: int = 60,
    type: str = "imported event"
 ) -> pd.DataFrame:
-    """
-    Returns a Multiindexed Pandas DataFrame containing all of the csv data found in the directory at the given path.
-    The DataFrame holds columns for DateTime and Glucose Value, and is indexed by 'id'
-    @param path    the path of the directory to be parsed through
-    @param glucose_col   the header of the column containing the glucose values
-    """
+    """Bulk imports events from .csv files within a given directory
+   
+   :param path: the path of the directory to import from
+   :type path: str
+   :param id: the identification of the patient that the imported events belong to
+   :type id: str
+   :param day_col: the name of the column specifying the day the event occurred (year, month, and specific day), defaults to 'Day'
+   :type day_col: str, optional
+   :param time_col: the name of the column specifying what time during the day the event occurred, defaults to 'Time'
+   :type time_col: str, optional
+   :param before: the amount of minutes to also look at before the event timestamp, defaults to 60
+   :type before: int, optional
+   :param after: the amount of minutes to also look at after the event timestamp, defaults to 60
+   :type after: int, optional
+   :param type: the type of event to classify all the imported events as, defaults to 'imported event'
+   :type type: str, optional
+   :return: a Pandas DataFrame containing all the imported events
+   :rtype: 'pandas.DataFrame'
+   """
     csv_files = glob.glob(path + "/*.csv")
 
     if len(csv_files) == 0:
@@ -93,16 +117,25 @@ def import_events_csv(
    before: int = 60,
    after: int = 60,
    type: str = "imported event"
-):
-   """
-   Imports events from a single given .csv file
-   @param path       the path of the .csv file to import from
-   @param id         the ID of the patient that the imported events belong to
-   @param day_col    the name of the column specifying the day the event occurred (year, month, and specific day)
-   @param time_col   the name of the column specifying what time during the day the event occurred
-   @param before     the amount of minutes to also look at before the event timestamp
-   @param after      the amount of minutes to also look at after the event timestamp
-   @param type       the type of event all the imported events are
+) -> pd.DataFrame:
+   """Bulk imports events from a single .csv file
+   
+   :param path: the path of the .csv file to import from
+   :type path: str
+   :param id: the identification of the patient that the imported events belong to
+   :type id: str
+   :param day_col: the name of the column specifying the day the event occurred (year, month, and specific day), defaults to 'Day'
+   :type day_col: str, optional
+   :param time_col: the name of the column specifying what time during the day the event occurred, defaults to 'Time'
+   :type time_col: str, optional
+   :param before: the amount of minutes to also look at before the event timestamp, defaults to 60
+   :type before: int, optional
+   :param after: the amount of minutes to also look at after the event timestamp, defaults to 60
+   :type after: int, optional
+   :param type: the type of event to classify all the imported events as, defaults to 'imported event'
+   :type type: str, optional
+   :return: a Pandas DataFrame containing all the imported events
+   :rtype: 'pandas.DataFrame'
    """
    df = pd.read_csv(path)
    csv_name = os.path.splitext(path)[0]
@@ -117,7 +150,7 @@ def import_events_csv(
 
    return events.dropna(subset=[TIME])
 
-def episodes_helper(
+def _episodes_helper(
    df: pd.DataFrame, 
    id: str, 
    type: str, 
@@ -126,6 +159,27 @@ def episodes_helper(
    min_length: int, 
    end_length: int
 ) -> pd.DataFrame:
+   """Retrieves all episodes of a specific type/level for a specific patient within the given CGM data
+
+   :param df: Pandas DataFrame containing preprocessed CGM data
+   :type df: pandas.DataFrame
+   :param id: identification of the patient to retrieve episodes for
+   :type id: str
+   :param type: type of episode ('hypo' or 'hyper')
+   :type type: str
+   :param threshold: threshold (in mg/dL) above/below which glucose values are considered as part of an episode
+   :type threshold: int
+   :param level: the level the retrieved episodes are (0, 1, or 2)
+   :type level: int
+   :param min_length: minimum duration (in minutes) required for excursions, defaults to 15
+   :type min_length: int, optional
+   :param end_length: minimum amount of time (in minutes) that the glucose values must be within typical ranges 
+      at the end of an excursion, defaults to 15
+   :type end_length: int, optional
+   :return: a Pandas DataFrame containing all episodes of a specific type/level for a specific patient within the given CGM data
+   :rtype: pandas.DataFrame
+   """
+
    config.read('config.ini')
    interval = int(config["variables"]["interval"])
    timegap = lambda timedelta: timedelta.total_seconds() / 60
@@ -171,19 +225,43 @@ def episodes_helper(
 
 def get_episodes(
     df: pd.DataFrame,
-    hypo_lvl1: int = 54,
-    hyper_lvl0: int = 120,
-    hyper_lvl1: int = 140,
-    hyper_lvl2: int = 180,
+    hypo_lvl2: int = 54,
+    hypo_lvl1: int = 70,
+    hyper_lvl0: int = 140,
+    hyper_lvl1: int = 180,
+    hyper_lvl2: int = 250,
     min_length: int = 15,
     end_length: int = 15
 ) -> pd.DataFrame:
+   """Retrieves all episodes within the given CGM data
+
+   :param df: Pandas DataFrame containing preprocessed CGM data
+   :type df: pandas.DataFrame
+   :param hypo_lvl2: threshold (in mg/dL) below which glucose values are considered level 2 hypoglycemic, defaults to 54
+   :type hypo_lvl2: int, optional
+   :param hypo_lvl1: threshold (in mg/dL) below which glucose values are considered level 1 hypoglycemic, defaults to 70
+   :type hypo_lvl1: int, optional
+   :param hyper_lvl0: threshold (in mg/dL) above which glucose values are considered level 0 hyperglycemic, defaults to 140
+   :type hyper_lvl0: int, optional
+   :param hyper_lvl1: threshold (in mg/dL) above which glucose values are considered level 1 hyperglycemic, defaults to 180
+   :type hyper_lvl1: int, optional
+   :param hyper_lvl2: threshold (in mg/dL) above which glucose values are considered level 2 hyperglycemic, defaults to 250
+   :type hyper_lvl2: int, optional
+   :param min_length: minimum duration (in minutes) required for excursions, defaults to 15
+   :type min_length: int, optional
+   :param end_length: minimum amount of time (in minutes) that the glucose values must be within typical ranges 
+      at the end of an excursion, defaults to 15
+   :type end_length: int, optional
+   :return: a Pandas DataFrame containing all episodes within the given CGM data
+   :rtype: pandas.DataFrame
+   """
    output = pd.DataFrame()
    for id, data in df.groupby(ID):
-      episodes = pd.concat([episodes_helper(data, id, "hyper", hyper_lvl0, 0, min_length, end_length),
-                            episodes_helper(data, id, "hyper", hyper_lvl1, 1, min_length, end_length),
-                            episodes_helper(data, id, "hyper", hyper_lvl2, 2, min_length, end_length),
-                            episodes_helper(data, id, "hypo", hypo_lvl1, 1, min_length, end_length)])
+      episodes = pd.concat([_episodes_helper(data, id, "hyper", hyper_lvl0, 0, min_length, end_length),
+                            _episodes_helper(data, id, "hyper", hyper_lvl1, 1, min_length, end_length),
+                            _episodes_helper(data, id, "hyper", hyper_lvl2, 2, min_length, end_length),
+                            _episodes_helper(data, id, "hypo", hypo_lvl1, 1, min_length, end_length),
+                            _episodes_helper(data, id, "hypo", hypo_lvl2, 2, min_length, end_length)])
       
       episodes.sort_values(by=[TIME], inplace=True)
       output = pd.concat([output, episodes])
@@ -196,6 +274,21 @@ def get_excursions(
    min_length: int = 15,
    end_length: int = 15
 ) -> pd.DataFrame:
+   """Retrieves all excursions within the given CGM data
+
+   :param df: Pandas DataFrame containing preprocessed CGM data
+   :type df: pandas.DataFrame
+   :param z: the number of standard deviations away from the mean that should define an 'excursion', defaults to 2
+   :type z: int, optional
+   :param min_length: minimum duration (in minutes) required for excursions, defaults to 15
+   :type min_length: int, optional
+   :param end_length: minimum amount of time (in minutes) that the glucose values must be within typical ranges 
+      at the end of an excursion, defaults to 15
+   :type end_length: int, optional
+   :return: a Pandas DataFrame containing all excursions within the given CGM data
+   :rtype: pandas.DataFrame
+   """
+
    excursions = pd.DataFrame()
 
    config.read('config.ini')
@@ -263,243 +356,137 @@ def get_excursions(
 
    return excursions
 
-def backwards_ROC(df: pd.DataFrame) -> pd.Series:
-   data = df.copy().reset_index(drop=True).set_index(TIME)
-   config.read('config.ini')
-   interval = int(config["variables"]["interval"])
-   return ((3 * data[GLUCOSE]) - (4 * data[GLUCOSE].shift()) + data[GLUCOSE].shift(2)) / (2 * interval)
-
-def get_meals(df: pd.DataFrame, threshold: float, cooldown: int = 20) -> pd.DataFrame:
-   meals = pd.DataFrame()
-   for id, data in df.groupby(ID):
-      roc = backwards_ROC(data)
-      meal_times = roc[roc >= threshold].index.tolist()
-      for time in meal_times:
-         if meals.shape[0] == 0 or ((time - meals[TIME].iloc[-1]) >= pd.Timedelta(minutes = cooldown)):
-            meal = pd.DataFrame.from_records([{ID: id, TIME: time, BEFORE: 0, AFTER: 0, 
-                                                      TYPE: "meal", DESCRIPTION: f"meal occurring at {time}"}])
-            meals = pd.concat([meals, meal])
-   return meals
-
 def get_curated_events(df: pd.DataFrame) -> pd.DataFrame:
+   """Retrieves all curated events (episodes and excursions) for all the patients within the given DataFrame
+
+   :param df: a Pandas DataFrame containing preprocessed CGM data
+   :type df: 'pandas.DataFrame'
+   :return: a Pandas DataFrame (in the usual event structure defined by the package) containing all curated events for all the patients within the given DataFrame
+   :rtype: 'pandas.DataFrame'
+   """
    return pd.concat([get_episodes(df), get_excursions(df)])
 
 def retrieve_event_data(
     df: pd.DataFrame,
     events: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    Returns a multiindexed Pandas DataFrame containing only the patient data during their respective 'events'
-    @param df      a multiindexed Pandas DataFrame containing all the relevant patient data
-    @param events  a single indexed Pandas DataFrame, with each row specifying a single event in the form of
-                   an id, a datetime, # of hours before the datetime to include, # of hours after to include, and a desc
+    """Returns a multiindexed Pandas DataFrame containing only patient data during the respective given events
+    :param df: a Pandas DataFrame containing the preprocessed CGM traces to retrieve event subsets from
+    :type df: 'pandas.DataFrame'
+    :param events: a single indexed Pandas DataFrame, with each row specifying a single event in the form of
+                   an id, a datetime, # of hours before the datetime to include, # of hours after to include, and a description
+    :type events: 'pandas.DataFrame'
+    :return: a multi-indexed Pandas DataFrame, with each index referring to a subset of CGM trace that was found within 'df' and occurs during a single event within 'events' 
+    :rtype: 'pandas.DataFrame'
     """
     event_data = pd.DataFrame()
+    for index, row in events.to_frame().T.iterrows():
+      id = row[ID]
+      if id in df.index:
+         datetime = pd.Timestamp(row[TIME])
+         initial = datetime - pd.Timedelta(row[BEFORE], "m")
+         final = datetime + pd.Timedelta(row[AFTER], "m")
 
-    for index, row in events.iterrows():
-        id = row[ID]
+         patient_data = df.loc[id]
+         data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy()
 
-        datetime = pd.Timestamp(row[TIME])
-        initial = datetime - pd.Timedelta(row[BEFORE], "m")
-        final = datetime + pd.Timedelta(row[AFTER], "m")
+         data[ID] = id
+         data[DESCRIPTION] = row[DESCRIPTION]
 
-        patient_data = df.loc[id]
-        data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy()
-
-        data[ID] = id
-        data[DESCRIPTION] = row[DESCRIPTION]
-
-        event_data = pd.concat([event_data, data])
+         event_data = pd.concat([event_data, data])
 
     #if event_data.shape[0] != 0:
       #event_data = event_data.set_index(["id"])
 
     return event_data
 
-def create_event_features(
-    df: pd.DataFrame,
-    events: pd.DataFrame,
-) -> pd.DataFrame:
-   """
-   Returns a multiindexed Pandas DataFrame containing metrics for the patient data during their respective 'events'
-   @param df      a multiindexed Pandas DataFrame containing all the relevant patient data
-   @param events  a single indexed Pandas DataFrame, with each row specifying a single event in the form of
-                  an id, a datetime, # of hours before the datetime to include, # of hours after to include, and a desc
-   """
-   event_data = retrieve_event_data(df, events)
-   return create_features(event_data, events=True)
-
 def event_summary(events: pd.DataFrame) -> pd.Series:
+   """Returns the number of events per unique event type found within 'events'
+
+   :param events: a Pandas DataFrame containing events (as per package guidelines)
+   :type events: 'pandas.DataFrame'
+   :return: a Pandas Series containing the number of events per unique event type found within 'events'
+   :rtype: 'pandas.Series'
+   """
    return events[TYPE].value_counts()
 
-def episode_statistics(
-   df: pd.DataFrame,
-   events: pd.DataFrame,
-   id: str,
-) -> pd.DataFrame:
-   "Calculates episode-specific metrics on the given DataFrame (helper function)"
-   hypo_lvl1 = events[events[TYPE] == "hypo level 1 episode"]
-   hypo_lvl2 = events[events[TYPE] == "hypo level 2 episode"]
-   hyper_lvl1 = events[events[TYPE] == "hyper level 1 episode"]
-   hyper_lvl2 = events[events[TYPE] == "hyper level 2 episode"]
-
-   total_days = (df.iloc[-1][TIME] - df.iloc[0][TIME]).total_seconds() / (3600 * 24)
-
-   # mean episodes per day
-   hypo_lvl1_day = hypo_lvl1.shape[0] / total_days
-   hypo_lvl2_day = hypo_lvl2.shape[0] / total_days
-   hyper_lvl1_day = hyper_lvl1.shape[0] / total_days
-   hyper_lvl2_day = hypo_lvl2.shape[0] / total_days
-
-   # mean episode duration per day
-   hypo_lvl1_duration = hypo_lvl1[AFTER].mean() / total_days or np.nan
-   hypo_lvl2_duration = hypo_lvl2[AFTER].mean() / total_days or np.nan
-   hyper_lvl1_duration = hyper_lvl1[AFTER].mean() / total_days or np.nan
-   hyper_lvl2_duration = hyper_lvl2[AFTER].mean() / total_days or np.nan
-
-   # mean glucose per episode (hypo / hyper)
-   hypo_mean_glucose = np.nan
-   if hypo_lvl1_day != 0:
-      hypo_glucose_data = retrieve_event_data(df, hypo_lvl1).loc[id]
-      hypo_mean_glucose = np.mean([data[GLUCOSE].mean() for description, data in hypo_glucose_data.groupby(DESCRIPTION)])
-
-   hyper_mean_glucose = np.nan
-   if hyper_lvl1_day != 0:
-      hyper_glucose_data = retrieve_event_data(df, hyper_lvl1).loc[id]
-      hyper_mean_glucose = np.mean([data[GLUCOSE].mean() for description, data in hyper_glucose_data.groupby(DESCRIPTION)])
-
-   return pd.DataFrame.from_records([{"mean hypoglycemic level 1 episodes per day": hypo_lvl1_day,
-                                      "mean hypoglycemic level 2 episodes per day": hypo_lvl2_day,
-                                      "mean hyperglycemic level 1 episodes per day": hyper_lvl1_day,
-                                      "mean hyperglycemic level 2 episodes per day": hyper_lvl2_day,
-                                      "mean hypoglycemic level 1 duration per day": hypo_lvl1_duration,
-                                      "mean hypoglycemic level 2 duration per day": hypo_lvl2_duration,
-                                      "mean hyperglycemic level 1 duration per day": hyper_lvl1_duration,
-                                      "mean hyperglycemic level 2 duration per day": hyper_lvl2_duration,
-                                      "mean hypoglycemic glucose value (level 1) per day": hypo_mean_glucose,
-                                      "mean hyperglycemic glucose value (level 1) per day": hyper_mean_glucose,}])
-
 def AUC(df: pd.DataFrame) -> float:
+    """Calculates the total Area-Under-Curve (AUC) for the given CGM trace
+
+    :param df: a Pandas DataFrame containing the CGM trace to calculate the AUC of
+    :type df: 'pandas.DataFrame'
+    :return: the AUC of the given CGM trace
+    :rtype: float
+    """
     config.read('config.ini')
     interval = int(config["variables"]["interval"])
     return trapezoid(df[GLUCOSE], dx=interval)
 
-def iAUC(df: pd.DataFrame, level = float) -> float:
+def iAUC(df: pd.DataFrame, level: float) -> float:
+    """Calculates the incremental Area-Under-Curve (iAUC) for the given CGM trace
+
+    :param df: a Pandas DataFrame containing the CGM trace to calculate the AUC of
+    :type df: 'pandas.DataFrame'
+    :param level: the threshold above which to calculate iAUC
+    :type level: float
+    :return: the iAUC of the given CGM trace
+    :rtype: float
+    """
     data = df.copy()
     data[GLUCOSE] = abs(data[GLUCOSE] - level)
     data.loc[data[GLUCOSE] < 0, GLUCOSE] = 0
     return AUC(data)
 
 def baseline(df: pd.DataFrame) -> float:
+    """Returns the baseline glucose level for the given CGM trace
+
+    :param df: a Pandas DataFrame containing the CGM trace to retrieve the baseline glucose level for
+    :type df: 'pandas.DataFrame'
+    :return: the baseline glucose level of the given CGM trace
+    :rtype: float
+    """
     return df[GLUCOSE].iloc[0]
 
 def peak(df: pd.DataFrame) -> float:
+    """Returns the maximum glucose level for the given CGM trace
+
+    :param df: a Pandas DataFrame containing the CGM trace to retrieve the maximum glucose level for
+    :type df: 'pandas.DataFrame'
+    :return: the maximum glucose level of the given CGM trace
+    :rtype: float
+    """
     return np.max(df[GLUCOSE])
 
 def nadir(df: pd.DataFrame) -> float:
+   """Returns the minimum glucose level for the given CGM trace
+
+    :param df: a Pandas DataFrame containing the CGM trace to retrieve the minimum glucose level for
+    :type df: 'pandas.DataFrame'
+    :return: the minimum glucose level of the given CGM trace
+    :rtype: float
+    """
    return np.min(df[GLUCOSE])
 
 def delta(df: pd.DataFrame) -> float:
+    """Returns the difference in maximum and baseline glucose levels (delta) for the given CGM trace
+
+    :param df: a Pandas DataFrame containing the CGM trace to retrieve the delta for
+    :type df: 'pandas.DataFrame'
+    :return: the delta of the given CGM trace
+    :rtype: float
+    """
     return abs(peak(df) - baseline(df))
 
-def excursion_statistics(
-   df: pd.DataFrame,
-   events: pd.DataFrame, 
-   id: str,
-) -> pd.DataFrame:
-   total_days = (df.iloc[-1][TIME] - df.iloc[0][TIME]).total_seconds() / (3600 * 24)
-   mean = df[GLUCOSE].mean()
-   sd = df[GLUCOSE].std()
-   upper = mean + (2 * sd)
-   lower = mean - (2 * sd)
+def event_metrics(df: pd.DataFrame, event: pd.Series) -> pd.DataFrame:
+   """Calculates basic metrics for events (baseline, peak, delta, and iAUC)
 
-   hypo_excursions = events[events[TYPE] == "hypo excursion"].copy()
-   num_hypo_excursions = hypo_excursions.shape[0]
-   hyper_excursions = events[events[TYPE] == "hyper excursion"].copy()
-   num_hyper_excursions = hyper_excursions.shape[0]
-   hypo_data = retrieve_event_data(df, hypo_excursions)
-   hyper_data = retrieve_event_data(df, hyper_excursions)
-
-   hypo_excursions_per_day = num_hypo_excursions / total_days
-   hyper_excursions_per_day = num_hyper_excursions / total_days
-
-   hypo_mean_duration = np.mean(hypo_excursions[BEFORE] + hypo_excursions[AFTER])
-   mean_hypo_iAUC = 0
-   mean_hypo_nadir = 0
-   mean_hypo_delta = 0
-   mean_hypo_upwards = 0
-   mean_hypo_downwards = 0
-   if num_hypo_excursions != 0:
-      for description, hypo_excursion in hypo_data.groupby(DESCRIPTION):
-         mean_hypo_iAUC += iAUC(hypo_excursion, level=lower)
-         nadir = np.min(hypo_excursion[GLUCOSE]); mean_hypo_nadir += nadir
-         delta = abs(lower - nadir); mean_hypo_delta += delta
-
-         event = events[events[DESCRIPTION] == description]
-         downwards = delta / event[BEFORE]; mean_hypo_downwards += downwards
-         upwards = delta / event[AFTER]; mean_hypo_upwards += upwards
-      mean_hypo_iAUC /= num_hypo_excursions
-      mean_hypo_nadir /= num_hypo_excursions
-      mean_hypo_delta /= num_hypo_excursions
-      mean_hypo_upwards /= num_hypo_excursions
-      mean_hypo_downwards /= num_hypo_excursions
-
-   hyper_mean_duration = np.mean(hyper_excursions[BEFORE] + hyper_excursions[AFTER])
-   mean_hyper_iAUC = 0
-   mean_hyper_peak = 0
-   mean_hyper_delta = 0
-   mean_hyper_upwards = 0
-   mean_hyper_downwards = 0
-   if num_hyper_excursions != 0:
-      for description, hyper_excursion in hyper_data.groupby(DESCRIPTION):
-         mean_hyper_iAUC += iAUC(hyper_excursion, level=upper)
-         peak = np.max(hyper_excursion[GLUCOSE]); mean_hyper_peak += peak
-         delta = abs(peak - upper); mean_hyper_delta += delta
-
-         event = events[events[DESCRIPTION] == description]
-         downwards = delta / event[AFTER]; mean_hyper_downwards += downwards
-         upwards = delta / event[BEFORE]; mean_hyper_upwards += upwards
-      mean_hyper_iAUC /= num_hyper_excursions
-      mean_hyper_peak /= num_hyper_excursions
-      mean_hyper_delta /= num_hyper_excursions
-      mean_hyper_upwards /= num_hyper_excursions
-      mean_hyper_downwards /= num_hyper_excursions
-
-   return pd.DataFrame.from_records([{"mean hypoglycemic excursions per day": hypo_excursions_per_day,
-                                      "mean hyperglycemic excursions per day": hyper_excursions_per_day,
-                                      "mean hypoglycemic excursion duration": hypo_mean_duration,
-                                      "mean hyperglycemic excursion duration": hyper_mean_duration,
-                                      "mean hypoglycemic excursion incremental area above curve (iAAC)": mean_hypo_iAUC,
-                                      "mean hyperglycemic excursion incremental area under curve (iAUC)": mean_hyper_iAUC,
-                                      "mean hypoglycemic excursion minimum": mean_hypo_nadir,
-                                      "mean hyperglycemic excursion maximum": mean_hyper_peak,
-                                      "mean hypoglycemic excursion amplitude": mean_hypo_delta,
-                                      "mean hyperglycemic excursion amplitude": mean_hyper_delta,
-                                      "mean hypoglycemic excursion downwards slope (mg/dL per min)": mean_hypo_downwards,
-                                      "mean hyperglycemic excursion downwards slope (mg/dL per min)": mean_hyper_downwards,
-                                      "mean hypoglycemic excursion upwards slope (mg/dL per min)": mean_hypo_upwards,
-                                      "mean hyperglycemic excursion upwards slope (mg/dL per min)": mean_hyper_upwards}])
-
-def event_statistics(
-   df: pd.DataFrame,
-   events: pd.DataFrame, 
-) -> pd.DataFrame:
-   statistics = pd.DataFrame()
-
-   for id, data in df.groupby(ID):
-      patient = events[events[ID] == id]
-      stats = pd.concat([pd.DataFrame.from_records([{ID: id}]), 
-                         episode_statistics(data, patient, id),
-                         excursion_statistics(data, patient, id)], axis=1)
-      statistics = pd.concat([statistics, stats])
-   
-   statistics.set_index(ID, inplace=True)
-   return statistics
-
-def event_metrics(
-   df: pd.DataFrame,
-   event: pd.Series
-) -> pd.DataFrame:
+   :param df: Pandas DataFrame containing preprocessed CGM data
+   :type df: pandas.DataFrame
+   :param event: Pandas Series with fields that represent an 'event'
+   :type event: pandas.Series
+   :return: Pandas DataFrame containing the basic metrics for the given event
+   :rtype: pandas.DataFrame
+   """
    id = event[ID]
 
    datetime = pd.Timestamp(event[TIME])
@@ -516,3 +503,85 @@ def event_metrics(
    metrics["iAUC"] = iAUC(data, baseline(data))
 
    return metrics.to_frame().T
+
+def create_event_features(
+    df: pd.DataFrame,
+    events: pd.DataFrame,
+) -> pd.DataFrame:
+   """Returns a multi-indexed Pandas DataFrame containing metrics for the patient data during their respective 'events'
+   
+   :param df: a Pandas DataFrame containing all the relevant patient CGM data to generate event metrics for
+   :type df: 'pandas.Series'
+   :param events: a single indexed Pandas DataFrame, with each row specifying a single event in the form of
+                  an id, a datetime, # of hours before the datetime to include, # of hours after to include, and a desc
+   :type events: 'pandas.DataFrame'
+   :return: a multi-indexed Pandas DataFrame containing metrics for the patient data during their respective 'events'
+   """
+   event_features = {}
+   for id in df.index.unique():
+      sub_features = {}
+      for type, sub_events in events[events[ID] == id].groupby(TYPE):
+         sub_features.update(create_event_features_helper(df.loc[id], sub_events, type))
+      event_features[id] = sub_features
+
+   return pd.DataFrame(event_features).T
+
+def create_event_features_helper(
+   df: pd.DataFrame,
+   sub_events: pd.DataFrame,
+   type: str,     
+) -> dict[str, float]:
+   """Calculates aggregate event-based metrics for a single patient and type of event. Helper method for 'create_event_features()'.
+
+   :param df: Pandas DataFrame containing the CGM trace for a single patient
+   :type df: 'pandas.DataFrame'
+   :param sub_events: Pandas DataFrame containing events of only one type solely for the patient whose CGM trace is also given
+   :type sub_events: 'pandas.DataFrame'
+   :param type: the type of event that 'sub_events' contains
+   :type type: str
+   :return: a dictionary with str-type keys that refer to the name of the calculated features and float-type values
+   :rtype: dict[str, float]
+   """
+   
+   features = {
+      f"Mean {type} Duration": [],
+      f"Mean Glucose During {type}s": [],
+      f"Mean Upwards Slope of {type}s (mg/dL per min)": [],
+      f"Mean Downwards Slope of {type}s (mg/dL per min)": [],
+      f"Mean Minimum Glucose of {type}s": [],
+      f"Mean Maximum Glucose of {type}s": [],
+      f"Mean Amplitude of {type}s": [],
+      f"Mean iAUC of {type}s": []
+   }
+   
+   for _, event in sub_events.iterrows():
+      event_data = retrieve_event_data(df, event)
+
+      duration = event[AFTER] - event[BEFORE]
+      features[f"Mean {type} Duration"].append(duration)
+
+      features[f"Mean Glucose During {type}s"].append(event_data[GLUCOSE].mean())
+      features[f"Mean Minimum Glucose of {type}s"] = nadir(event_data)
+      features[f"Mean Maximum Glucose of {type}s"] = peak(event_data)
+
+      extrema = event_data[event_data[TIME] == event[TIME]].squeeze()
+      base = baseline(event_data)
+      amplitude = extrema[GLUCOSE] - base
+      features[f"Mean Amplitude of {type}s"].append(abs(amplitude))
+
+      delta_time_start = ((extrema[TIME] - event_data[TIME].iloc[0]).total_seconds() / 60)
+      delta_time_end = ((extrema[TIME] - event_data[TIME].iloc[-1]).total_seconds() / 60)
+      start_slope = 0 if delta_time_start == 0 else (amplitude / delta_time_start)
+      end_slope = 0 if delta_time_end == 0 else (amplitude / delta_time_end)
+      if amplitude >= 0:
+         features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(abs(start_slope))
+         features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(-1 * abs(end_slope))
+      else:
+         features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(abs(end_slope))
+         features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(-1 * abs(start_slope))
+
+      features[f"Mean iAUC of {type}s"].append(iAUC(event_data, base))
+
+   features = {k: np.mean(v) for k, v in features.items()}
+   features[f"Mean # of {type}s per day"] = sub_events.shape[0] / len(df[TIME].dt.date.unique())
+   return features

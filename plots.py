@@ -8,9 +8,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
-from pyppeteer import launch
-import asyncio
-import io, os
+import os
 
 from features import percent_time_in_range, mean, CV, GMI
 
@@ -112,15 +110,6 @@ def daily_plot(
                   cells=dict(values=table_body,align=['left', 'left'],font=dict(size=10),)
                ), row=idx, col=2
             )
-
-            """
-            day_events[TIME] = pd.to_datetime(day_events[TIME])
-            for event in day_events.itertuples():
-               time = getattr(event, TIME)
-               type = getattr(event, TYPE)
-               already_rendered = (type in rendered_types) 
-               if (not already_rendered): rendered_types.append(type)
-               fig.add_vline(x=time, row=idx, col=1, line_dash="dash", line_color=color_map[type], name=type, legendgroup=type, showlegend=(not already_rendered))"""
 
             for _, row in day_events.drop_duplicates(subset=[TIME, TYPE]).iterrows():
                already_rendered = (row[TYPE] in rendered_types)
@@ -295,9 +284,7 @@ def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, save: str = No
     for id, data in df.groupby(ID):
         spaghetti_plot(data, id, chunk_day, height)
 
-def spaghetti_plot(
-    df: pd.DataFrame, id: str, chunk_day: bool = False, save: str = None, height: int = 600, app=False
-):
+def spaghetti_plot(df: pd.DataFrame, id: str, chunk_day: bool = False, save: str = None, height: int = 600, app=False):
     """Graphs a spaghetti plot for the given patient within the given DataFrame. 
     Also saves this plot as both a PDF and HTML file if passed a valid path.
 
@@ -368,9 +355,9 @@ def AGP_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 600, app
     data = df.loc[id].copy()  
     data.reset_index(inplace=True)
 
-    data[[TIME, GLUCOSE, ID]] = pp.resample_data(data[[TIME, GLUCOSE, ID]])
+    data[[TIME, GLUCOSE, ID]] = pp._resample_data(data[[TIME, GLUCOSE, ID]])
     times = data[TIME] - data[TIME].dt.normalize()
-    # need to be in a DateTime format so seaborn can tell how to scale the x axis labels below
+    # need to be in a DateTime format so plots can tell how to scale the x axis labels below
     data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
 
     data.set_index("Time", inplace=True)
@@ -404,19 +391,6 @@ def AGP_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 600, app
     if app: return fig
     fig.show()
 
-async def generate_pdf(html_content: str, output_path: str = None):
-   browser = await launch()
-   page = await browser.newPage()
-   await page.setContent(html_content)
-   await page.waitForSelector("#main-content")
-   await asyncio.sleep(2)
-
-   pdf_options = {"format": "A4"}
-   if output_path: pdf_options['path'] = output_path
-   pdf_content = await page.pdf(pdf_options)
-   await browser.close()
-   return pdf_content
-
 def AGP_report(df: pd.DataFrame, id: str, path: str = None):
    """Creates an AGP-report for the given patient within the given DataFrame. 
     Also saves this plot as a PDF file if passed a valid path.
@@ -427,8 +401,8 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
     :type id: str
     :param path: path of the location where the saved PDF version of the plot is saved, defaults to None
     :type path: str, optional 
-    :return: the AGP-report in bytestring form if path is False, otherwise None
-    :rtype: 'bytes' | None
+    :return: the AGP-report in string form if path is False, otherwise None
+    :rtype: str | None
    """
    fig = make_subplots(rows = 1, cols = 2, specs=[[{"type": "bar"}, {"type": "table"}]])
    
@@ -445,11 +419,8 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
                        "181 - 250 mg/dL": "rgba(250,192,3,255)",
                        "> 250 mg/dL": "rgba(241,136,64,255)"}
    
-   fig.add_trace(go.Bar(name="< 54 mg/dL", x=["TIR"], y=[TIR["< 54 mg/dL"]], marker=dict(color=COLORS["< 54 mg/dL"])), row=1, col=1)
-   fig.add_trace(go.Bar(name="54 - 69 mg/dL", x=["TIR"], y=[TIR["54 - 69 mg/dL"]], marker=dict(color=COLORS["54 - 69 mg/dL"])), row=1, col=1)
-   fig.add_trace(go.Bar(name="70 - 180 mg/dL", x=["TIR"], y=[TIR["70 - 180 mg/dL"]], marker=dict(color=COLORS["70 - 180 mg/dL"])), row=1, col=1)
-   fig.add_trace(go.Bar(name="181 - 250 mg/dL", x=["TIR"], y=[TIR["181 - 250 mg/dL"]], marker=dict(color=COLORS["181 - 250 mg/dL"])), row=1, col=1)
-   fig.add_trace(go.Bar(name="> 250 mg/dL", x=["TIR"], y=[TIR["> 250 mg/dL"]], marker=dict(color=COLORS["> 250 mg/dL"])), row=1, col=1)
+   for key, value in TIR.items():
+      fig.add_trace(go.Bar(name=key, x=["TIR"], y=[value], marker=dict(color=COLORS[key])), row=1, col=1)
    fig.update_layout(barmode='stack')
    
    ave_glucose = mean(patient_data)
@@ -458,11 +429,11 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
 
    days = patient_data[TIME].dt.date
    table_body = [["Test Patient ID:", f"{len(days.unique())} Days:", "Average Glucose (mg/dL):", "Glucose Management Indicator:", "Glucose Variability:"], 
-                 [id, f"{days.iloc[0]} to {days.iloc[-1]}", str(ave_glucose), str(gmi), str(cv)]]
-   fig.add_trace(go.Table(cells=dict(values=table_body,align=['left', 'center'],font=dict(size=10))), row=1, col=2)
+                 [id, f"{days.iloc[0]} to {days.iloc[-1]}", str(round(ave_glucose, 2)), str(round(gmi, 2)), str(round(cv, 2))]]
+   fig.add_trace(go.Table(cells=dict(values=table_body,align=['left', 'center'],font=dict(size=15),height=50)), row=1, col=2)
    
    agp = AGP_plot(df, id, app=True); 
-   weekly = weekly_plot(df, id, app=True); 
+   weekly = weekly_plot(df, id, height=500, app=True); 
 
    header_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
    agp_html = agp.to_html(full_html=False, include_plotlyjs=False)
@@ -472,10 +443,10 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
    <!DOCTYPE html>
    <html>
    <head>
-      <title>Combined Plots</title>
+      <title>AGP Report for {id}</title>
    </head>
    <body>
-      <h1>Visual Analysis of CGM Data</h1>
+      <h1> AGP Report: Continuous Glucose Monitoring </h1>
       {header_html}
       {agp_html}
       {weekly_html}
@@ -483,10 +454,8 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
    </html>
    """
 
-   with open(os.path.join(path, "debug.html"), "w") as f:
-      f.write(html_template)
+   if path:
+      with open(os.path.join(path, f"{id}_AGP_Report.html"), "w") as f:
+         f.write(html_template)
 
-   if not path:
-      return asyncio.run(generate_pdf(html_template))
-      
-   asyncio.run(generate_pdf(html_template, os.path.join(path, f"{id}_AGP_Report.pdf")))
+   return html_template
