@@ -470,27 +470,57 @@ def _chunk_day(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def segment_data(path: str, df: pd.DataFrame) -> pd.DataFrame:
-   """Splits patients' data into multiple segments based on a given .csv file containing ID's and DateTimes
-
-   :param path: path of the .csv file containing identifications and timestamps indicating where to split the given DataFrame
-   :type path: str
-   :param df: the DataFrame to split based on the given .csv file
-   :type df: pandas.DataFrame
-   :return: a Pandas DataFrame with the data split accordingly
-   :rtype: pandas.DataFrame
-   """
-   segments = pd.read_csv(path)
-   segments[TIME] = pd.to_datetime(segments[TIME])
-   segments.set_index(ID, inplace=True)
-
-   segmented_df = df.reset_index(drop=False)
-
-   for id, locations in segments.groupby(ID):
-      locations.reset_index(drop=True, inplace=True)
-      locations.sort_values(TIME, ascending=False, inplace=True)
-      for index, row in locations.iterrows():
-         mask = (segmented_df[ID] == id) & (segmented_df[TIME] >= row[TIME])
-         segmented_df.loc[mask, ID] = f"{id} ({index})"
-   
-   segmented_df.set_index(ID, inplace=True)
-   return segmented_df
+    """
+    Splits patients' data into multiple segments based on a given .csv file containing ID's and DateTimes.
+    
+    :param path: path of the .csv file containing identifications and timestamps indicating where to split the given DataFrame
+    :type path: str
+    :param df: the DataFrame to split based on the given .csv file
+    :type df: pandas.DataFrame
+    :return: a Pandas DataFrame with the data split accordingly
+    :rtype: pandas.DataFrame
+    """
+    # Read the segments CSV file
+    segments = pd.read_csv(path)
+    segments[TIME] = pd.to_datetime(segments[TIME])
+    
+    # Sort segments by TIME
+    segments.sort_values(['ID', TIME], inplace=True)
+    
+    # Create a copy of the original dataframe to avoid modifying it directly
+    df_copy = df.copy()
+    df_copy[TIME] = pd.to_datetime(df_copy[TIME])
+    df_copy = df_copy.reset_index()
+    
+    # Initialize a Segment column in the original dataframe
+    df_copy['Segment'] = 0
+    
+    # Use a dictionary to keep track of segment counters
+    segment_counters = {id: 1 for id in segments['ID'].unique()}
+    
+    # Iterate over each row in the segments dataframe
+    for _, segment_row in segments.iterrows():
+        id = segment_row['ID']
+        time = segment_row[TIME]
+        
+        # Create a mask for rows before the current segment time
+        mask = (df_copy['ID'] == id) & (df_copy[TIME] < time) & (df_copy['Segment'] == 0)
+        
+        # Update the segment counter for those rows
+        df_copy.loc[mask, 'Segment'] = segment_counters[id]
+        
+        # Increment the segment counter
+        segment_counters[id] += 1
+    
+    # Assign the segment counter to rows after the last date
+    for id in segment_counters.keys():
+        mask = (df_copy['ID'] == id) & (df_copy['Segment'] == 0)
+        df_copy.loc[mask, 'Segment'] = segment_counters[id]
+    
+    # Combine ID and Segment to form the new ID
+    df_copy['ID'] = df_copy['ID'].astype(str) + '_' + df_copy['Segment'].astype(str)
+    
+    # Drop the Segment column as it's no longer needed
+    df_copy.drop(columns=['Segment'], inplace=True)
+    
+    return df_copy
