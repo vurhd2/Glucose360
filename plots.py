@@ -177,6 +177,7 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
    if not event_data.empty: create_event_lines(fig, event_data)
 
    fig.update_xaxes(type="date", range=[before, after])
+   fig.update_yaxes(title_text="Glucose Value (mg/dL)")
    if app: return fig
    fig.show()
 
@@ -250,6 +251,7 @@ def weekly_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 1000,
                mode='lines+markers',
          ), row=(week_index+1), col=1
       )
+      fig.update_yaxes(title_text="Glucose Value (mg/dL)", row=(week_index+1), col=1)
    
    if len(weekly_dfs) > 1:
       offset_before = pd.Timedelta(hours=10)
@@ -311,6 +313,7 @@ def spaghetti_plot(df: pd.DataFrame, id: str, chunk_day: bool = False, save: str
 
     fig = px.line(data, x="Time", y=GLUCOSE, color="Day", title=f"Spaghetti Plot for {id}", height=height, facet_col="Day Chunking" if chunk_day else None)
     fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time") # shows only the times for the x-axis
+    fig.update_yaxes(title_text="Glucose Value (mg/dL)", row=1, col=1)
     
     if app: return fig
     fig.show()
@@ -387,6 +390,7 @@ def AGP_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 600, app
     fig.add_hline(y=180, line_color="green")
     fig.update_layout(title={"text": f"AGP Plot for {id}"}, height=height, yaxis_range = [35,405])
     fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time") # shows only the times for the x-axis
+    fig.update_yaxes(title_text="Glucose Value (mg/dL)")
 
     if app: return fig
     fig.show()

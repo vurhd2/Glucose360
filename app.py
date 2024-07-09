@@ -15,8 +15,10 @@ from shinywidgets import output_widget, render_widget
 import zipfile
 import io
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+config_path = os.path.join(dir_path, "config.ini")
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read(config_path)
 ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
@@ -33,12 +35,13 @@ app_ui = ui.page_fluid(
          "Import Data/Events",
          ui.layout_columns(
             ui.card(
-               ui.input_text("id_template", "Template for ID Retrieval"),
-               ui.input_text("glucose_col", "Name of Glucose Column", "Glucose Value (mg/dL)"),
-               ui.input_text("time_col", "Name of Timestamp Column", "Timestamp (YYYY-MM-DDThh:mm:ss)"),
+               ui.input_select("sensor", "Type of CGM Device:", {"dexcom": "Dexcom", "freestyle libre 2": "FreeStyle Libre 2 or 3", "freestyle libre pro": "FreeStyle Libre Pro"}),
+               ui.input_text("glucose_col", "Name of Glucose Column", None),
+               ui.input_text("time_col", "Name of Timestamp Column", None),
                ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
                ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
-               ui.input_file("data_import", "Import Dexcom CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False),
+               ui.input_text("id_template", "Template for ID Retrieval"),
+               ui.input_file("data_import", "Import CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False),
             ),
             ui.card(ui.input_file("split_data", "Split Data", accept=[".csv"], multiple=False)),
          ),
@@ -74,6 +77,10 @@ app_ui = ui.page_fluid(
          ui.card(
             ui.output_data_frame("features_table"),
             ui.download_button("download_features", "Download Features as .csv file")
+         ),
+         ui.card(
+            ui.output_data_frame("event_features_table"),
+            ui.download_button("download_event_features", "Download Event Features as .csv file")
          )
       ),
       ui.nav_panel(
@@ -84,7 +91,8 @@ app_ui = ui.page_fluid(
             ui.output_ui("plot_settings"),
             ui.output_data_frame("daily_filters"),
             ui.output_ui("plot_height"),
-            ui.download_button("download_plot", "Download Currently Displayed Plot")
+            ui.download_button("download_plot", "Download Currently Displayed Plot"),
+            ui.download_button("download_AGP_report", "Download AGP Report for Patient")
          ),
          ui.card(
             output_widget("plot"),
@@ -133,9 +141,11 @@ def server(input, output, session):
       data_file: list[FileInfo] | None = input.data_import()
       if data_file is None:
          return pd.DataFrame()
+      glucose_col = None if input.glucose_col() == "" else input.glucose_col()
+      time_col = None if input.time_col() == "" else input.time_col()
       data = import_data(path=data_file[0]["datapath"], name=data_file[0]["name"].split(".")[0],
-                         id_template=input.id_template(),
-                         glucose=input.glucose_col(), time=input.time_col(),
+                         sensor=input.sensor(), id_template=input.id_template(),
+                         glucose=glucose_col, time=time_col,
                          interval=input.resample_interval(), max_gap=input.max_gap(), output=notify)
       split_file: list[FileInfo] | None = input.split_data()
       if split_file is None:
@@ -175,7 +185,7 @@ def server(input, output, session):
             events = daily_events_ref.get()
             dates = pd.to_datetime(events[TIME]).dt.date
             data = df()
-            height = max(3000, (dates.value_counts().iloc[0] * 65 * data.loc[patient][TIME].dt.date.unique().size))
+            height = max(3000, (dates.value_counts().iloc[0] * 62 * data.loc[patient][TIME].dt.date.unique().size))
             upper = height
       elif plot_type == "Spaghetti": 
          lower = 250
@@ -220,13 +230,13 @@ def server(input, output, session):
       global fig
       plot_type = input.select_plot()
       if plot_type == "Daily (Time-Series)":
-         fig = daily_plot(df(), input.select_patient_plot(), input.plot_height_slider(), daily_events_ref.get(), app=True)
+         fig = daily_plot(df(), input.select_patient_plot(), height=input.plot_height_slider(), events=daily_events_ref.get(), app=True)
       elif plot_type == "Weekly (Time-Series)":
-         fig = weekly_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
+         fig = weekly_plot(df(), input.select_patient_plot(), height=input.plot_height_slider(), app=True)
       elif plot_type == "Spaghetti":
-         fig = spaghetti_plot(df(), input.select_patient_plot(), input.spaghetti_chunk_switch(), input.plot_height_slider(), app=True)
+         fig = spaghetti_plot(df(), input.select_patient_plot(), input.spaghetti_chunk_switch(), height=input.plot_height_slider(), app=True)
       else:
-         fig = AGP_plot(df(), input.select_patient_plot(), input.plot_height_slider(), app=True)
+         fig = AGP_plot(df(), input.select_patient_plot(), height=input.plot_height_slider(), app=True)
       
       return fig
    
@@ -253,6 +263,10 @@ def server(input, output, session):
       zip_stream.seek(0)  # Rewind the stream to the beginning
       yield zip_stream.getvalue()
 
+   @render.download(filename=lambda: f"{input.select_patient_plot()}_AGP_Report.html")
+   def download_AGP_report():
+      yield bytes(AGP_report(df(), input.select_patient_plot()), 'utf-8')
+
    @render.data_frame
    def features_table():
       if df().shape[0] == 0: raise Exception("Please upload your CGM data above.")
@@ -262,6 +276,16 @@ def server(input, output, session):
    def download_features():
       if df().shape[0] == 0: raise Exception("Please upload your CGM data above.")
       yield create_features(df()).reset_index(names=["Patient"]).to_csv()
+   
+   @render.data_frame
+   def event_features_table():
+      if df().shape[0] == 0: raise Exception("Please upload your CGM data above.")
+      return render.DataGrid(create_event_features(df(), events_ref.get()).reset_index(names=["Patient"]))
+   
+   @render.download(filename="event_features.csv")
+   def download_event_features():
+      if df().shape[0] == 0: raise Exception("Please upload your CGM data above.")
+      yield create_features(df(), events_ref.get()).reset_index(names=["Patient"]).to_csv()
    
    @reactive.Effect
    @reactive.event(input.event_import)
@@ -312,7 +336,10 @@ def server(input, output, session):
    @reactive.event(input.edit_event)
    def edit_event():
       filtered_events = filtered_events_ref.get()
-      filtered_events[input.edit_event_col()].iloc[input.edit_event_row()-1] = input.edit_event_text()
+      new_value = input.edit_event_text()
+      if input.edit_event_col() == "Before" or input.edit_event_col() == "After": new_value = int(new_value)
+      elif input.edit_event_col() == "Timestamp": new_value = pd.to_datetime(new_value)
+      filtered_events[input.edit_event_col()].iloc[input.edit_event_row()-1] = new_value
       filtered_events_ref.set(filtered_events)
 
       events = events_ref.get()
