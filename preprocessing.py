@@ -160,9 +160,10 @@ def _import_csv(
 
     :param path: the path of the csv file to be parsed through
     :type path: str
-    :param sensor: the CGM device model used (either dexcom, freestyle libre pro, or freestyle libre 2 / freestyle libre 3), defaults to 'dexcom'
+    :param sensor: the CGM device model used (either 'dexcom', 'freestyle libre pro', 'freestyle libre 2', 'freestyle libre 3', or 'columns'), defaults to 'dexcom'
     :type sensor: str, optional
-    :param id_template: regex dictating how to parse the CSV file's name for the proper patient identification, defaults to None
+    :param id_template: regex dictating how to parse the CSV file's name for the proper patient identification, 
+       or the name of the patient identification column if using the 'columns' sensor, defaults to None
     :type id_template: str, optional
     :param glucose: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used), defaults to None
     :type glucose: str, optional
@@ -183,9 +184,40 @@ def _import_csv(
        data = _import_csv_freestyle_libre_23(path, id_template, glucose, time)
     elif sensor == "freestyle libre pro":
        data = _import_csv_freestyle_libre_pro(path, id_template, glucose, time)
+    elif sensor == "columns":
+       data = _import_csv_columns(path, id_template, glucose, time)
    
     preprocessed_data = preprocess_data(data, interval, max_gap)
     return preprocessed_data
+
+def _import_csv_columns(
+   path: str,
+   id_col: str = None,
+   glucose_col: str = None,
+   time_col: str = None,
+) -> pd.DataFrame:
+   """Returns a Pandas DataFrame containing all of the csv data found at the given path.
+   The path must lead to a .csv file with three columns (identification, timestamp, and glucose value) containing CGM data. The returned DataFrame holds columns 
+   for timestamps, glucose values, and the patient identification
+
+   :param path: the path of the csv file to be parsed through
+   :type path: str
+   :param id_col: the name of the column containing the patient identification(s), defaults to None
+   :type id_col: str, optional
+   :param glucose_col: the name of the column containing the glucose values in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+   :type glucose_col: str, optional
+   :param time_col: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used), defaults to None
+   :type time_col: str, optional
+   :return: A Pandas DataFrame containing the raw data found at the given path. This DataFrame holds columns for timestamps, glucose values, and the patient identification.
+   :rtype: pandas.DataFrame 
+   """
+   df = pd.read_csv(path)
+   glucose = glucose_col or "Glucose Value (mg/dL)"
+   time = time_col or "Timestamp (YYYY-MM-DDThh:mm:ss)"
+   id = id_col or "ID"
+
+   df.rename(columns={glucose: GLUCOSE, time: TIME, id: ID}, inplace=True)
+   return df
 
 def _import_csv_dexcom(
     path: str,
