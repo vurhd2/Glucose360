@@ -680,6 +680,9 @@ def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.Series:
    positiondelta = round(timedelta / interval)
    return df[GLUCOSE].diff(periods=positiondelta) / timedelta
 
+def number_readings(df: pd.DataFrame):
+   return df[GLUCOSE].count()
+
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
 
@@ -734,7 +737,8 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Percent Time in Hypoglycemia (level 2)": percent_time_in_level_2_hypoglycemia(data),
       "Percent Time In Range (70-180)": percent_time_in_range(data),
       "SD": SD(data),
-      "Third Quartile": summary[3]
+      "Third Quartile": summary[3],
+      "Count": number_readings(data)
    }
    return features
 
