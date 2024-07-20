@@ -546,6 +546,15 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
    averages[GLUCOSE] = df[GLUCOSE]
    averages.reset_index(drop=True, inplace=True)
 
+   if short_ma < 1 or long_ma < 1:
+      raise Exception("Moving average spans must be positive, non-zero integers.")
+
+   if short_ma >= long_ma:
+      raise Exception("Short moving average span must be smaller than the long moving average span.")
+   
+   if averages.shape[0] < long_ma:
+      return np.nan
+
    # calculate rolling means, iglu does right align instead of center
    averages["MA_Short"] = averages[GLUCOSE].rolling(window=short_ma, min_periods=1).mean()
    averages["MA_Long"] = averages[GLUCOSE].rolling(window=long_ma, min_periods=1).mean()
@@ -680,6 +689,9 @@ def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.Series:
    positiondelta = round(timedelta / interval)
    return df[GLUCOSE].diff(periods=positiondelta) / timedelta
 
+def number_readings(df: pd.DataFrame):
+   return df[GLUCOSE].count()
+
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
 
@@ -734,7 +746,8 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Percent Time in Hypoglycemia (level 2)": percent_time_in_level_2_hypoglycemia(data),
       "Percent Time In Range (70-180)": percent_time_in_range(data),
       "SD": SD(data),
-      "Third Quartile": summary[3]
+      "Third Quartile": summary[3],
+      "Count": number_readings(data)
    }
    return features
 
