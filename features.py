@@ -101,6 +101,16 @@ def percent_time_in_range(df: pd.DataFrame, low: int = 70, high: int = 180) -> f
    total_time = len(df)
    return (100 * time_in_range / total_time) if total_time > 0 else np.nan
 
+def percent_time_in_tight_range(df: pd.DataFrame):
+   """Returns the percent of total time the given CGM trace's glucose levels were within 70-140 mg/dL (inclusive)
+
+   :param df: a Pandas DataFrame containing preprocessed CGM data
+   :type df: 'pandas.DataFrame'
+   :return: the percentage of total time the glucose levels within the given CGM trace were within 70-140 mg/dL (inclusive)
+   :rtype: float
+   """
+   return percent_time_in_range(df, low = 70, high = 140)
+
 def percent_time_above_range(df: pd.DataFrame, limit: int = 180) -> float:
    """Returns the percent of total time the given CGM trace's glucose levels were above a given threshold (inclusive)
    
@@ -735,6 +745,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Minimum": summary[0],
       "MODD": MODD(data),
       "M-Value": m_value(data),
+      "Number of Readings": number_readings(data),
       "Percent Time Above Range (180)": percent_time_above_range(data),
       "Percent Time Below Range (70)": percent_time_below_range(data),
       "Percent Time in Hyperglycemia": percent_time_in_hyperglycemia(data),
@@ -745,9 +756,9 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Percent Time in Hypoglycemia (level 1)": percent_time_in_level_1_hypoglycemia(data),
       "Percent Time in Hypoglycemia (level 2)": percent_time_in_level_2_hypoglycemia(data),
       "Percent Time In Range (70-180)": percent_time_in_range(data),
+      "Percent Time In Tight Range (70-140)": percent_time_in_tight_range(data),
       "SD": SD(data),
       "Third Quartile": summary[3],
-      "Count": number_readings(data)
    }
    return features
 

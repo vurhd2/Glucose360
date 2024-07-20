@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 
 import os
 
-from features import percent_time_in_range, mean, CV, GMI
+from features import percent_time_in_range, percent_time_in_tight_range, mean, CV, GMI
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 config_path = os.path.join(dir_path, "config.ini")
@@ -386,7 +386,8 @@ def AGP_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 600, app
     fig.add_trace(go.Scatter(name="75th", x=agp_data["Time"], y=agp_data["75th"], fill="tonexty", fillcolor="#97A8CB", line=dict(color="#97A8CB")))
     fig.add_trace(go.Scatter(name="95th", x=agp_data["Time"], y=agp_data["95th"], fill="tonexty", fillcolor="#C9D4E9", line=dict(color="#869FCE")))
 
-    fig.add_hline(y=70, line_color="green")
+    fig.add_hline(y=70, line_color="lime")
+    fig.add_hline(y=140, line_color="lime")
     fig.add_hline(y=180, line_color="green")
     fig.update_layout(title={"text": f"AGP Plot for {id}"}, height=height, yaxis_range = [35,405])
     fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time") # shows only the times for the x-axis
@@ -413,13 +414,15 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
    patient_data = df.loc[id]
    TIR = {"< 54 mg/dL": percent_time_in_range(patient_data, 0, 53),
                        "54 - 69 mg/dL": percent_time_in_range(patient_data, 54, 69),
-                       "70 - 180 mg/dL": percent_time_in_range(patient_data, 70, 180),
+                       "70 - 140 mg/dL": percent_time_in_tight_range(patient_data),
+                       "141 - 180 mg/dL": percent_time_in_range(patient_data, 141, 180),
                        "181 - 250 mg/dL": percent_time_in_range(patient_data, 181, 250),
                        "> 250 mg/dL": percent_time_in_range(patient_data, 251, 400)}
    
    COLORS = {"< 54 mg/dL": "rgba(151,34,35,255)",
                        "54 - 69 mg/dL": "rgba(229,43,23,255)",
-                       "70 - 180 mg/dL": "rgba(82,173,79,255)",
+                       "70 - 140 mg/dL": "#00ff00",
+                       "141 - 180 mg/dL": "rgba(82,173,79,255)",
                        "181 - 250 mg/dL": "rgba(250,192,3,255)",
                        "> 250 mg/dL": "rgba(241,136,64,255)"}
    
