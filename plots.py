@@ -427,7 +427,7 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
                        "> 250 mg/dL": "rgba(241,136,64,255)"}
    
    for key, value in TIR.items():
-      fig.add_trace(go.Bar(name=key, x=["TIR"], y=[value], marker=dict(color=COLORS[key])), row=1, col=1)
+      fig.add_trace(go.Bar(name=key, x=["TIR"], y=[value], marker=dict(color=COLORS[key]), text=[round(value, 2)], textposition="inside"), row=1, col=1)
    fig.update_layout(barmode='stack')
    
    ave_glucose = mean(patient_data)
