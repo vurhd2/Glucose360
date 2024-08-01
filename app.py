@@ -35,13 +35,15 @@ app_ui = ui.page_fluid(
          "Import Data/Events",
          ui.layout_columns(
             ui.card(
-               ui.input_select("sensor", "Type of CGM Device:", {"dexcom": "Dexcom", "freestyle libre 2": "FreeStyle Libre 2 or 3", "freestyle libre pro": "FreeStyle Libre Pro"}),
-               ui.input_text("glucose_col", "Name of Glucose Column", None),
-               ui.input_text("time_col", "Name of Timestamp Column", None),
-               ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
-               ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
-               ui.input_text("id_template", "Template for ID Retrieval"),
-               ui.input_file("data_import", "Import CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False),
+               ui.input_checkbox("use_example_data", "Use Example Data", False),
+               ui.output_ui("sensor_select"),
+               ui.output_ui("upload_data_button"),
+               ui.card(
+                  "Advanced Parameters",   
+                  ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
+                  ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
+                  ui.output_ui("advanced_custom_data_options")
+               )
             ),
             ui.card(ui.input_file("split_data", "Split Data", accept=[".csv"], multiple=False)),
          ),
@@ -138,12 +140,18 @@ def server(input, output, session):
 
    @reactive.Calc
    def df():
-      data_file: list[FileInfo] | None = input.data_import()
-      if data_file is None:
-         return pd.DataFrame()
+      path = "trial_ids.zip"
+      name = None
+      if not input.use_example_data():
+         data_file: list[FileInfo] | None = input.data_import()
+         if data_file is None:
+            return pd.DataFrame()
+         path = data_file[0]["datapath"]
+         name = data_file[0]["name"].split(".")[0]
+
       glucose_col = None if input.glucose_col() == "" else input.glucose_col()
       time_col = None if input.time_col() == "" else input.time_col()
-      data = import_data(path=data_file[0]["datapath"], name=data_file[0]["name"].split(".")[0],
+      data = import_data(path=path, name=name,
                          sensor=input.sensor(), id_template=input.id_template(),
                          glucose=glucose_col, time=time_col,
                          interval=input.resample_interval(), max_gap=input.max_gap(), output=notify)
@@ -152,6 +160,31 @@ def server(input, output, session):
          return data
       return segment_data(split_file[0]["datapath"], data)
    
+   @render.ui
+   def sensor_select():
+      if not input.use_example_data():
+         return ui.input_select("sensor", "Type of CGM Device:", {"dexcom": "Dexcom", "freestyle libre 2": "FreeStyle Libre 2 or 3", "freestyle libre pro": "FreeStyle Libre Pro"})
+      
+      return None
+   
+   @render.ui
+   def upload_data_button():
+      if not input.use_example_data():
+         return ui.input_file("data_import", "Import CGM Data (.csv or .zip file)", accept=[".zip", ".csv"], multiple=False)
+      
+      return None
+   
+   @render.ui
+   def advanced_custom_data_options():
+      if not input.use_example_data():
+         return ui.TagList(
+            ui.input_text("glucose_col", "Name of Glucose Column", None),
+            ui.input_text("time_col", "Name of Timestamp Column", None),
+            ui.input_text("id_template", "Template for ID Retrieval")
+         )
+      
+      return None
+
    @reactive.Effect
    @reactive.event(input.data_import)
    def get_initial_events():
