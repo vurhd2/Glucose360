@@ -142,23 +142,35 @@ def server(input, output, session):
    def df():
       path = "trial_ids.zip"
       name = None
+      sensor = "dexcom"
+      id_template = None
+      glucose = None
+      time = None
+
       if not input.use_example_data():
          data_file: list[FileInfo] | None = input.data_import()
          if data_file is None:
             return pd.DataFrame()
          path = data_file[0]["datapath"]
          name = data_file[0]["name"].split(".")[0]
+         sensor = input.sensor()
+         id_template = input.id_template()
+         glucose = None if input.glucose_col() == "" else input.glucose_col()
+         time = None if input.time_col() == "" else input.time_col()
 
-      glucose_col = None if input.glucose_col() == "" else input.glucose_col()
-      time_col = None if input.time_col() == "" else input.time_col()
       data = import_data(path=path, name=name,
-                         sensor=input.sensor(), id_template=input.id_template(),
-                         glucose=glucose_col, time=time_col,
+                         sensor=sensor, id_template=id_template,
+                         glucose=glucose, time=time,
                          interval=input.resample_interval(), max_gap=input.max_gap(), output=notify)
+      
       split_file: list[FileInfo] | None = input.split_data()
-      if split_file is None:
-         return data
-      return segment_data(split_file[0]["datapath"], data)
+      if split_file is not None: data = segment_data(split_file[0]["datapath"], data)
+      
+      events = get_curated_events(data).reset_index(drop=True)
+      events_ref.set(events)
+      filtered_events_ref.set(events)
+
+      return data
    
    @render.ui
    def sensor_select():
@@ -188,12 +200,6 @@ def server(input, output, session):
          )
       
       return None
-
-   @reactive.Effect
-   @reactive.event(input.data_import)
-   def get_initial_events():
-      events_ref.set(get_curated_events(df()).reset_index(drop=True))
-      filtered_events_ref.set(events_ref.get())
 
    @render.ui
    def patient_plot():
@@ -260,7 +266,7 @@ def server(input, output, session):
       events = events_ref.get()
       events = events[events[ID] == input.select_patient_plot()]
       table = pd.DataFrame(events.drop_duplicates(subset=[TYPE])[TYPE])
-      return render.DataGrid(table, row_selection_mode="multiple")
+      return render.DataGrid(table, row_selection_mode="multiple") if table.shape[0] != 0 else None
 
    @render_widget
    def plot():
