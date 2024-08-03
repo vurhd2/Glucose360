@@ -163,7 +163,11 @@ def server(input, output, session):
    @render.ui
    def sensor_select():
       if not input.use_example_data():
-         return ui.input_select("sensor", "Type of CGM Device:", {"dexcom": "Dexcom", "freestyle libre 2": "FreeStyle Libre 2 or 3", "freestyle libre pro": "FreeStyle Libre Pro"})
+         return ui.input_select("sensor", "Type of CGM Device:", 
+                                {"dexcom": "Dexcom", 
+                                 "freestyle libre 2": "FreeStyle Libre 2 or 3", 
+                                 "freestyle libre pro": "FreeStyle Libre Pro",
+                                 "columns": "CSV Format Adhering to Glucose360 Guidelines"})
       
       return None
    
