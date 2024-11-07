@@ -210,7 +210,7 @@ def percent_time_in_level_2_hyperglycemia(df: pd.DataFrame) -> float:
    :return: the percentage of total time the glucose levels within the given CGM trace were in ranges indicating level 2 hyperglycemia (> 250 mg/dL)
    :rtype: float
    """
-   return percent_time_above_range(df, 251)
+   return percent_time_above_range(df, 250)
 
 def ADRR(df: pd.DataFrame) -> float:
    """Calculates the Average Daily Risk Range (ADRR) for the given CGM trace.
@@ -283,7 +283,7 @@ def COGI(df: pd.DataFrame) -> float:
     if sd >= 108:
         sd_score = 0
     elif sd > 18:
-        sd_score = (1 - (sd / 108)) * 100
+        sd_score = (1 - ((sd-18) / 90)) * 100
     sd_score *= 0.15
     
     COGI = tir_score + tbr_score + sd_score
@@ -373,8 +373,9 @@ def GVP(df: pd.DataFrame) -> float:
     :return: the GVP for the given CGM trace
     :rtype: float
     """
-    delta_x = df[TIME].diff().apply(lambda timedelta: timedelta.total_seconds() / 60)
-    delta_y = df[GLUCOSE].diff()
+    copy_df = df.dropna(subset=[GLUCOSE])
+    delta_x = copy_df[TIME].diff().apply(lambda timedelta: timedelta.total_seconds() / 60)
+    delta_y = copy_df[GLUCOSE].diff()
     L = np.sum(np.sqrt((delta_x ** 2) + (delta_y ** 2)))
     L_0 = np.sum(delta_x)
     return ((L / L_0) - 1) * 100
