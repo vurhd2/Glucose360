@@ -3,6 +3,7 @@ import numpy as np
 import configparser
 from multiprocessing import Pool
 import os
+from scipy.integrate import trapezoid
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 config_path = os.path.join(dir_path, "config.ini")
@@ -786,6 +787,48 @@ def mean_24h(df: pd.DataFrame) -> float:
 
     return np.nan if not daily_means else np.mean(daily_means)
 
+def mean_24h_auc(df: pd.DataFrame) -> float:
+    """Calculates the mean 24-hour AUC (Area Under the Curve) using the trapezoidal rule,
+    with a 24-hour period defined from 23:30 of one day to 23:30 of the next day.
+    
+    For each date d, the 24-hour period is from d 23:30 to (d+1) 23:30.
+    The AUC for that day is the integral of glucose over time.
+    We then average over all days to get the mean 24-hour AUC.
+    
+    Integration is done using scipy.integrate.trapezoid with actual timestamps as 'x'.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean 24-hour AUC for the given CGM trace (23:30–23:30)
+    :rtype: float
+    """
+    # Drop rows with missing glucose values
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+    
+    daily_aucs = []
+    unique_dates = sorted(df['date'].unique())
+
+    for d in unique_dates:
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_period = start_period + pd.Timedelta(days=1)
+
+        day_df = df[(df[TIME] >= start_period) & (df[TIME] < end_period)].sort_values(by=TIME)
+
+        if len(day_df) < 2:
+            # Not enough data points to form a meaningful trapezoid
+            continue
+        
+        # Compute time array in hours relative to start_period
+        times_in_hours = (day_df[TIME] - start_period).dt.total_seconds() / 3600.0
+        glucose_values = day_df[GLUCOSE].values
+
+        # Use scipy's trapezoid to integrate glucose over the 24-hour period
+        auc = trapezoid(glucose_values, x=times_in_hours)
+        daily_aucs.append(auc)
+    
+    return np.nan if not daily_aucs else np.mean(daily_aucs)
+
 
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
@@ -827,6 +870,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Maximum": summary[4],
       "Mean": mean(data),
       "Mean 24h Glucose": mean_24h(data),
+      "Mean 24h AUC": mean_24h_auc(data),
       "Mean Absolute Differences": mean_absolute_differences(data),
       "Median": summary[2],
       "Median Absolute Deviation": median_absolute_deviation(data),
