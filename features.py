@@ -756,6 +756,36 @@ def LSBG(df: pd.DataFrame) -> float:
 
     return np.nan if not daily_lowest_means else np.mean(daily_lowest_means)
 
+def mean_24h(df: pd.DataFrame) -> float:
+    """Calculates the Mean 24-h starting from 23:30 to the next day's 23:30 for each day.
+    
+    For each date d, the 24-hour window is from d 23:30 to (d+1) 23:30.
+    We compute the mean glucose within this window for each day, then average across all days.
+    
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean 24-h BG value for the given CGM trace
+    :rtype: float
+    """
+    # Drop rows with missing glucose values
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_means = []
+    unique_dates = sorted(df['date'].unique())
+
+    for d in unique_dates:
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_period = start_period + pd.Timedelta(days=1)  # next day's 23:30
+
+        period_df = df[(df[TIME] >= start_period) & (df[TIME] < end_period)]
+
+        if not period_df.empty:
+            daily_mean = period_df[GLUCOSE].mean()
+            daily_means.append(daily_mean)
+
+    return np.nan if not daily_means else np.mean(daily_means)
+
 
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
@@ -796,6 +826,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "MAGE": MAGE(data),
       "Maximum": summary[4],
       "Mean": mean(data),
+      "Mean 24h Glucose": mean_24h(data),
       "Mean Absolute Differences": mean_absolute_differences(data),
       "Median": summary[2],
       "Median Absolute Deviation": median_absolute_deviation(data),
