@@ -703,6 +703,25 @@ def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.Series:
 def number_readings(df: pd.DataFrame):
    return df[GLUCOSE].count()
 
+def FBG(df: pd.DataFrame) -> float:
+    # Ensure time is in datetime
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_fbg_means = []
+    for day, day_df in df.groupby('date'):
+        # Filter data for readings between 6:00 and 7:00 AM
+        morning_df = day_df[(day_df[TIME].dt.hour == 6)]
+        morning_df = morning_df.sort_values(by=TIME)
+
+        if len(morning_df) >= 6:
+            # Take the first 6 readings within 6:00-7:00 AM
+            first_6 = morning_df.head(6)
+            daily_fbg_means.append(first_6[GLUCOSE].mean())
+    
+    return np.nan if not daily_fbg_means else np.mean(daily_fbg_means)
+
+
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
 
@@ -722,6 +741,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "CONGA": CONGA(data),
       "CV": CV(data),
       "eA1c": eA1c(data),
+      "FBG": FBG(data),
       "First Quartile": summary[1],
       "GMI": GMI(data),
       "GRADE": GRADE(data),
