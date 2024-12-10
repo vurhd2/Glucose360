@@ -829,6 +829,60 @@ def mean_24h_auc(df: pd.DataFrame) -> float:
     
     return np.nan if not daily_aucs else np.mean(daily_aucs)
 
+def mean_daytime(df: pd.DataFrame) -> float:
+    """
+    Calculates the mean daytime glucose, defined as the mean of all measures 
+    between 06:30 and 23:30 for each day, averaged across all days.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean daytime glucose level
+    :rtype: float
+    """
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_means = []
+    for d, day_df in df.groupby('date'):
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=6, minutes=30)
+        end_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+
+        daytime_df = day_df[(day_df[TIME] >= start_period) & (day_df[TIME] < end_period)]
+
+        if not daytime_df.empty:
+            daily_mean = daytime_df[GLUCOSE].mean()
+            daily_means.append(daily_mean)
+
+    return np.nan if not daily_means else np.mean(daily_means)
+
+def mean_nocturnal(df: pd.DataFrame) -> float:
+    """
+    Calculates the mean nocturnal glucose, defined as the mean of all measures 
+    between 23:30 and 06:30 for each day, averaged across all days.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean nocturnal glucose level
+    :rtype: float
+    """
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_means = []
+    for d, day_df in df.groupby('date'):
+        # Define the nighttime window
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_period = pd.to_datetime(d) + pd.Timedelta(days=1, hours=6, minutes=30)
+
+        night_df = day_df[(day_df[TIME] >= start_period) & (day_df[TIME] < end_period)]
+
+        # If no readings in that interval for this particular night, skip it
+        if not night_df.empty:
+            daily_mean = night_df[GLUCOSE].mean()
+            daily_means.append(daily_mean)
+
+    return np.nan if not daily_means else np.mean(daily_means)
+
 
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
@@ -872,6 +926,8 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Mean 24h Glucose": mean_24h(data),
       "Mean 24h AUC": mean_24h_auc(data),
       "Mean Absolute Differences": mean_absolute_differences(data),
+      "Mean Daytime": mean_daytime(data),
+      "Mean Nocturnal": mean_nocturnal(data),
       "Median": summary[2],
       "Median Absolute Deviation": median_absolute_deviation(data),
       "Minimum": summary[0],
