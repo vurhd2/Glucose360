@@ -883,6 +883,79 @@ def mean_nocturnal(df: pd.DataFrame) -> float:
 
     return np.nan if not daily_means else np.mean(daily_means)
 
+def auc_daytime(df: pd.DataFrame) -> float:
+    """
+    Calculates the mean daytime AUC (Area Under the Curve) of glucose 
+    between 06:30 and 23:30 for each day, and then averages these daily AUCs.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean daytime AUC
+    :rtype: float
+    """
+    # Drop rows with missing glucose values
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_aucs = []
+    for d, day_df in df.groupby('date'):
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=6, minutes=30)
+        end_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+
+        daytime_df = day_df[(day_df[TIME] >= start_period) & (day_df[TIME] < end_period)].sort_values(by=TIME)
+
+        if len(daytime_df) < 2:
+            # Not enough data points for integration
+            continue
+
+        # Compute time array in hours relative to start_period
+        times_in_hours = (daytime_df[TIME] - start_period).dt.total_seconds() / 3600.0
+        glucose_values = daytime_df[GLUCOSE].values
+
+        # Use scipy's trapezoid to integrate glucose over the daytime period
+        auc = trapezoid(glucose_values, x=times_in_hours)
+        daily_aucs.append(auc)
+
+    return np.nan if not daily_aucs else np.mean(daily_aucs)
+
+def nocturnal_auc(df: pd.DataFrame) -> float:
+    """
+    Calculates the mean nocturnal AUC (Area Under the Curve) of glucose 
+    between 23:30 and 06:30 for each day, and then averages these daily AUCs.
+
+    For each date d, we define the nocturnal period as d 23:30 to (d+1) 06:30.
+    
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean nocturnal AUC
+    :rtype: float
+    """
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_aucs = []
+    unique_dates = sorted(df['date'].unique())
+
+    for d in unique_dates:
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_period = start_period + pd.Timedelta(hours=6, minutes=30)
+
+        night_df = df[(df[TIME] >= start_period) & (df[TIME] < end_period)].sort_values(by=TIME)
+
+        if len(night_df) < 2:
+            # Not enough data points for integration
+            continue
+
+        # Compute time array in hours relative to start_period
+        times_in_hours = (night_df[TIME] - start_period).dt.total_seconds() / 3600.0
+        glucose_values = night_df[GLUCOSE].values
+
+        # Use scipy's trapezoid to integrate glucose over the nocturnal period
+        auc = trapezoid(glucose_values, x=times_in_hours)
+        daily_aucs.append(auc)
+
+    return np.nan if not daily_aucs else np.mean(daily_aucs)
+
 
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
@@ -902,6 +975,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "COGI": COGI(data),
       "CONGA": CONGA(data),
       "CV": CV(data),
+      "Daytime AUC": auc_daytime(data),
       "eA1c": eA1c(data),
       "FBG": FBG(data),
       "First Quartile": summary[1],
@@ -933,6 +1007,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Minimum": summary[0],
       "MODD": MODD(data),
       "M-Value": m_value(data),
+      "Nocturnal AUC": nocturnal_auc(data),
       "Number of Readings": number_readings(data),
       "Percent Time Above Range (180)": percent_time_above_range(data),
       "Percent Time Below Range (70)": percent_time_below_range(data),
