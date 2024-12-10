@@ -721,6 +721,41 @@ def FBG(df: pd.DataFrame) -> float:
     
     return np.nan if not daily_fbg_means else np.mean(daily_fbg_means)
 
+def LSBG(df: pd.DataFrame) -> float:
+    """Calculates the Lowest Sleeping Blood Glucose (LSBG).
+    
+    Defined as the mean of the six lowest consecutive glucose measures between
+    23:30 and 06:30 (spanning midnight) for each day, averaged over all days.
+    
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the LSBG for the given CGM trace
+    :rtype: float
+    """
+    # Drop rows with missing glucose values
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_lowest_means = []
+    unique_dates = sorted(df['date'].unique())
+
+    # For each date d, nighttime window: d 23:30 -> (d+1) 06:30
+    for d in unique_dates:
+        start_night = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_night = pd.to_datetime(d) + pd.Timedelta(days=1, hours=6, minutes=30)
+
+        night_df = df[(df[TIME] >= start_night) & (df[TIME] < end_night)].sort_values(by=TIME)
+        
+        if len(night_df) >= 6:
+            # Compute rolling mean of 6 consecutive readings
+            rolling_means = night_df[GLUCOSE].rolling(window=6).mean()
+            # Get the minimum of those rolling means for the night
+            min_rolling_mean = rolling_means.min()
+            if not np.isnan(min_rolling_mean):
+                daily_lowest_means.append(min_rolling_mean)
+
+    return np.nan if not daily_lowest_means else np.mean(daily_lowest_means)
+
 
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
@@ -756,6 +791,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "IGC": IGC(data),
       "J-Index": j_index(data),
       "LBGI": LBGI(data),
+      "LSBG": LSBG(data),
       "MAG": MAG(data),
       "MAGE": MAGE(data),
       "Maximum": summary[4],
