@@ -477,13 +477,81 @@ def delta(df: pd.DataFrame) -> float:
     """
     return abs(peak(df) - baseline(df))
 
-def event_metrics(df: pd.DataFrame, event: pd.Series) -> pd.DataFrame:
-   """Calculates basic metrics for events (baseline, peak, delta, and iAUC)
+def post_event_glucoses(data: pd.DataFrame, event_time: pd.Timestamp, times: list[int], glucose_col: str = GLUCOSE) -> dict:
+    """
+    Returns the glucose values closest to the specified times (in minutes) after the given event_time.
+
+    :param data: Pandas DataFrame containing the CGM data
+    :type data: pd.DataFrame
+    :param event_time: The time of the event
+    :type event_time: pd.Timestamp
+    :param times: A list of integers representing the number of minutes after event_time for which to find the glucose values
+    :type times: list[int]
+    :param glucose_col: The name of the glucose column in the data, defaults to GLUCOSE
+    :type glucose_col: str, optional
+    :return: A dictionary where keys are strings like "X-min Post Event" and values are the corresponding glucose readings or np.nan if not found
+    :rtype: dict
+    """
+    result = {}
+
+    # Always include 0-min to have a reference point
+    if 0 not in times:
+       times = [0] + times
+
+    for t in times:
+        key = f"{t}-min Post Event"
+        result[key] = np.nan
+        post_time = event_time + pd.Timedelta(minutes=t)
+
+        # Check if the desired time is within the range of the data
+        if not data.empty and data[TIME].min() <= post_time <= data[TIME].max():
+            closest_idx = (data[TIME] - post_time).abs().idxmin()
+            result[key] = data.loc[closest_idx, glucose_col]
+
+    return result
+
+def post_event_aucs(data: pd.DataFrame, event_time: pd.Timestamp, durations: list[int], glucose_col: str = GLUCOSE) -> dict:
+    """
+    Calculates AUC values for multiple durations (in minutes) starting from the given event_time.
+    
+    :param data: Pandas DataFrame containing the CGM data
+    :type data: pd.DataFrame
+    :param event_time: The time of the event
+    :type event_time: pd.Timestamp
+    :param durations: A list of integers representing the number of minutes after event_time for which to calculate the AUC
+    :type durations: list[int]
+    :param glucose_col: The name of the glucose column in the data, defaults to GLUCOSE
+    :type glucose_col: str, optional
+    :return: A dictionary where keys are strings like "X-min AUC" and values are the corresponding AUC readings or np.nan if no data is available
+    :rtype: dict
+    """
+    result = {}
+    for d in durations:
+        key = f"{d}-min AUC"
+        end_time = event_time + pd.Timedelta(minutes=d)
+        subset = data[(data[TIME] >= event_time) & (data[TIME] <= end_time)].copy()
+
+        if subset.empty:
+            result[key] = np.nan
+        else:
+            result[key] = AUC(subset)
+    return result
+
+def event_metrics(
+      df: pd.DataFrame,
+      event: pd.Series,
+      post_times: list[int] = [60, 120],
+      post_auc_times: list[int] = [120]
+) -> pd.DataFrame:
+   """Calculates basic metrics for events (baseline, peak, delta, iAUC, and
+   0-h, 1-h, and 2-h post event glucose values, and 2-h post event AUC)
 
    :param df: Pandas DataFrame containing preprocessed CGM data
    :type df: pandas.DataFrame
    :param event: Pandas Series with fields that represent an 'event'
    :type event: pandas.Series
+   :param post_times: A list of integers representing the number of minutes after event_time for which to find the glucose values
+   :type post_times: list[int], optional (defaults to [0, 60, 120] for 0-h, 1-h and 2-h post event)
    :return: Pandas DataFrame containing the basic metrics for the given event
    :rtype: pandas.DataFrame
    """
@@ -501,6 +569,27 @@ def event_metrics(df: pd.DataFrame, event: pd.Series) -> pd.DataFrame:
    metrics["Peak"] = peak(data)
    metrics["Delta"] = delta(data)
    metrics["iAUC"] = iAUC(data, baseline(data))
+
+   # Get post-event glucose values (including 0-min)
+   post_values = post_event_glucoses(data, datetime, post_times, GLUCOSE)
+   for k, v in post_values.items():
+      metrics[k] = v
+   
+   # Compute deltas from 0-min Post Event
+   zero_min_val = metrics["0-min Post Event"]
+   for t in post_times:
+      if t == 0:
+         continue
+      post_key = f"{t}-min Post Event"
+      delta_key = f"{t}-min Delta"
+      if post_key in metrics and not np.isnan(metrics[post_key]) and not np.isnan(zero_min_val):
+         metrics[delta_key] = metrics[post_key] - zero_min_val
+      else:
+         metrics[delta_key] = np.nan
+
+   auc_values = post_event_aucs(data, datetime, post_auc_times, GLUCOSE)
+   for k, v in auc_values.items():
+      metrics[k] = v
 
    return metrics.to_frame().T
 
