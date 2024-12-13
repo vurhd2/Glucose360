@@ -97,9 +97,10 @@ def percent_time_in_range(df: pd.DataFrame, low: int = 70, high: int = 180) -> f
    :return: the percentage of total time the glucose levels within the given CGM trace were between the given bounds (inclusive)
    :rtype: float
    """
-   in_range_df = df[(df[GLUCOSE] <= high) & (df[GLUCOSE] >= low)]
+   valid_df = df.dropna(subset=[GLUCOSE])
+   in_range_df = valid_df[(valid_df[GLUCOSE] <= high) & (valid_df[GLUCOSE] >= low)]
    time_in_range = len(in_range_df)
-   total_time = len(df)
+   total_time = len(valid_df)
    return (100 * time_in_range / total_time) if total_time > 0 else np.nan
 
 def percent_time_in_tight_range(df: pd.DataFrame):
