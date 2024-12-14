@@ -653,23 +653,26 @@ def create_event_features_helper(
       features[f"Mean Minimum Glucose of {type}s"] = nadir(event_data)
       features[f"Mean Maximum Glucose of {type}s"] = peak(event_data)
 
-      extrema = event_data[event_data[TIME] == event[TIME]].squeeze()
-      base = baseline(event_data)
-      amplitude = extrema[GLUCOSE] - base
+      event_time = event[TIME]
+      closest_idx = (event_data[TIME] - event_time).abs().idxmin()
+      event_glucose = event_data.loc[closest_idx, GLUCOSE]
+
+      peak_glucose = peak(event_data)
+      peak_time = event_data.loc[event_data[GLUCOSE].idxmax(), TIME]
+      amplitude = peak_glucose - event_glucose
       features[f"Mean Amplitude of {type}s"].append(abs(amplitude))
 
-      delta_time_start = ((extrema[TIME] - event_data[TIME].iloc[0]).total_seconds() / 60)
-      delta_time_end = ((extrema[TIME] - event_data[TIME].iloc[-1]).total_seconds() / 60)
-      start_slope = 0 if delta_time_start == 0 else (amplitude / delta_time_start)
-      end_slope = 0 if delta_time_end == 0 else (amplitude / delta_time_end)
-      if amplitude >= 0:
-         features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(abs(start_slope))
-         features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(-1 * abs(end_slope))
-      else:
-         features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(abs(end_slope))
-         features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(-1 * abs(start_slope))
+      time_diff_to_peak = (peak_time - event_time).total_seconds() / 60.0
+      slope_to_peak = (peak_glucose - event_glucose) / time_diff_to_peak if time_diff_to_peak != 0 else np.nan
+      features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(slope_to_peak)
 
-      features[f"Mean iAUC of {type}s"].append(iAUC(event_data, base))
+      end_time = event_data[TIME].iloc[-1]
+      end_glucose = event_data[GLUCOSE].iloc[-1]
+      time_diff_peak_to_end = (end_time - peak_time).total_seconds() / 60.0
+      slope_peak_to_end = (end_glucose - peak_glucose) / time_diff_peak_to_end if time_diff_peak_to_end != 0 else np.nan
+      features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(slope_peak_to_end)
+
+      features[f"Mean iAUC of {type}s"].append(iAUC(event_data, event_glucose))
 
    features = {k: np.mean(v) for k, v in features.items()}
    features[f"Mean # of {type}s per day"] = sub_events.shape[0] / len(df[TIME].dt.date.unique())
