@@ -375,12 +375,12 @@ def GVP(df: pd.DataFrame) -> float:
     :return: the GVP for the given CGM trace
     :rtype: float
     """
-    copy_df = df.dropna(subset=[GLUCOSE])
-    delta_x = copy_df[TIME].diff().apply(lambda timedelta: timedelta.total_seconds() / 60)
-    delta_y = copy_df[GLUCOSE].diff()
+    copy_df = df.dropna(subset=["Glucose"])
+    delta_x = pd.Series(5, index=np.arange(copy_df.shape[0]), dtype="float", name='orders')
+    delta_y = copy_df.reset_index()["Glucose"].diff()
     L = np.sum(np.sqrt((delta_x ** 2) + (delta_y ** 2)))
     L_0 = np.sum(delta_x)
-    return ((L / L_0) - 1) * 100
+    return L / L_0
 
 def hyper_index(df: pd.DataFrame, limit: int = 140, a: float = 1.1, c: float = 30) -> float:
     """Calculates the Hyperglycemia Index for the given CGM trace.
