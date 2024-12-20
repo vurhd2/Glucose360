@@ -3,6 +3,7 @@ import numpy as np
 import configparser
 from multiprocessing import Pool
 import os
+from scipy.integrate import trapezoid
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 config_path = os.path.join(dir_path, "config.ini")
@@ -96,9 +97,10 @@ def percent_time_in_range(df: pd.DataFrame, low: int = 70, high: int = 180) -> f
    :return: the percentage of total time the glucose levels within the given CGM trace were between the given bounds (inclusive)
    :rtype: float
    """
-   in_range_df = df[(df[GLUCOSE] <= high) & (df[GLUCOSE] >= low)]
+   valid_df = df.dropna(subset=[GLUCOSE])
+   in_range_df = valid_df[(valid_df[GLUCOSE] <= high) & (valid_df[GLUCOSE] >= low)]
    time_in_range = len(in_range_df)
-   total_time = len(df)
+   total_time = len(valid_df)
    return (100 * time_in_range / total_time) if total_time > 0 else np.nan
 
 def percent_time_in_tight_range(df: pd.DataFrame):
@@ -703,6 +705,259 @@ def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.Series:
 def number_readings(df: pd.DataFrame):
    return df[GLUCOSE].count()
 
+def FBG(df: pd.DataFrame) -> float:
+    # Ensure time is in datetime
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_fbg_means = []
+    for day, day_df in df.groupby('date'):
+        # Filter data for readings between 6:00 and 7:00 AM
+        morning_df = day_df[(day_df[TIME].dt.hour == 6)]
+        morning_df = morning_df.sort_values(by=TIME)
+
+        if len(morning_df) >= 6:
+            # Take the first 6 readings within 6:00-7:00 AM
+            first_6 = morning_df.head(6)
+            daily_fbg_means.append(first_6[GLUCOSE].mean())
+    
+    return np.nan if not daily_fbg_means else np.mean(daily_fbg_means)
+
+def LSBG(df: pd.DataFrame) -> float:
+    """Calculates the Lowest Sleeping Blood Glucose (LSBG).
+    
+    Defined as the mean of the six lowest consecutive glucose measures between
+    23:30 and 06:30 (spanning midnight) for each day, averaged over all days.
+    
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the LSBG for the given CGM trace
+    :rtype: float
+    """
+    # Drop rows with missing glucose values
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_lowest_means = []
+    unique_dates = sorted(df['date'].unique())
+
+    # For each date d, nighttime window: d 23:30 -> (d+1) 06:30
+    for d in unique_dates:
+        start_night = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_night = pd.to_datetime(d) + pd.Timedelta(days=1, hours=6, minutes=30)
+
+        night_df = df[(df[TIME] >= start_night) & (df[TIME] < end_night)].sort_values(by=TIME)
+        
+        if len(night_df) >= 6:
+            # Compute rolling mean of 6 consecutive readings
+            rolling_means = night_df[GLUCOSE].rolling(window=6).mean()
+            # Get the minimum of those rolling means for the night
+            min_rolling_mean = rolling_means.min()
+            if not np.isnan(min_rolling_mean):
+                daily_lowest_means.append(min_rolling_mean)
+
+    return np.nan if not daily_lowest_means else np.mean(daily_lowest_means)
+
+def mean_24h(df: pd.DataFrame) -> float:
+    """Calculates the Mean 24-h starting from 23:30 to the next day's 23:30 for each day.
+    
+    For each date d, the 24-hour window is from d 23:30 to (d+1) 23:30.
+    We compute the mean glucose within this window for each day, then average across all days.
+    
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean 24-h BG value for the given CGM trace
+    :rtype: float
+    """
+    # Drop rows with missing glucose values
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_means = []
+    unique_dates = sorted(df['date'].unique())
+
+    for d in unique_dates:
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_period = start_period + pd.Timedelta(days=1)  # next day's 23:30
+
+        period_df = df[(df[TIME] >= start_period) & (df[TIME] < end_period)]
+
+        if not period_df.empty:
+            daily_mean = period_df[GLUCOSE].mean()
+            daily_means.append(daily_mean)
+
+    return np.nan if not daily_means else np.mean(daily_means)
+
+def mean_24h_auc(df: pd.DataFrame) -> float:
+    """Calculates the mean 24-hour AUC (Area Under the Curve) using the trapezoidal rule,
+    with a 24-hour period defined from 23:30 of one day to 23:30 of the next day.
+    
+    For each date d, the 24-hour period is from d 23:30 to (d+1) 23:30.
+    The AUC for that day is the integral of glucose over time.
+    We then average over all days to get the mean 24-hour AUC.
+    
+    Integration is done using scipy.integrate.trapezoid with actual timestamps as 'x'.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean 24-hour AUC for the given CGM trace (23:30–23:30)
+    :rtype: float
+    """
+    # Drop rows with missing glucose values
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+    
+    daily_aucs = []
+    unique_dates = sorted(df['date'].unique())
+
+    for d in unique_dates:
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_period = start_period + pd.Timedelta(days=1)
+
+        day_df = df[(df[TIME] >= start_period) & (df[TIME] < end_period)].sort_values(by=TIME)
+
+        if len(day_df) < 2:
+            # Not enough data points to form a meaningful trapezoid
+            continue
+        
+        # Compute time array in hours relative to start_period
+        times_in_hours = (day_df[TIME] - start_period).dt.total_seconds() / 3600.0
+        glucose_values = day_df[GLUCOSE].values
+
+        # Use scipy's trapezoid to integrate glucose over the 24-hour period
+        auc = trapezoid(glucose_values, x=times_in_hours)
+        daily_aucs.append(auc)
+    
+    return np.nan if not daily_aucs else np.mean(daily_aucs)
+
+def mean_daytime(df: pd.DataFrame) -> float:
+    """
+    Calculates the mean daytime glucose, defined as the mean of all measures 
+    between 06:30 and 23:30 for each day, averaged across all days.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean daytime glucose level
+    :rtype: float
+    """
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_means = []
+    for d, day_df in df.groupby('date'):
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=6, minutes=30)
+        end_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+
+        daytime_df = day_df[(day_df[TIME] >= start_period) & (day_df[TIME] < end_period)]
+
+        if not daytime_df.empty:
+            daily_mean = daytime_df[GLUCOSE].mean()
+            daily_means.append(daily_mean)
+
+    return np.nan if not daily_means else np.mean(daily_means)
+
+def mean_nocturnal(df: pd.DataFrame) -> float:
+    """
+    Calculates the mean nocturnal glucose, defined as the mean of all measures 
+    between 23:30 and 06:30 for each day, averaged across all days.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean nocturnal glucose level
+    :rtype: float
+    """
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_means = []
+    for d, day_df in df.groupby('date'):
+        # Define the nighttime window
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_period = pd.to_datetime(d) + pd.Timedelta(days=1, hours=6, minutes=30)
+
+        night_df = day_df[(day_df[TIME] >= start_period) & (day_df[TIME] < end_period)]
+
+        # If no readings in that interval for this particular night, skip it
+        if not night_df.empty:
+            daily_mean = night_df[GLUCOSE].mean()
+            daily_means.append(daily_mean)
+
+    return np.nan if not daily_means else np.mean(daily_means)
+
+def auc_daytime(df: pd.DataFrame) -> float:
+    """
+    Calculates the mean daytime AUC (Area Under the Curve) of glucose 
+    between 06:30 and 23:30 for each day, and then averages these daily AUCs.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean daytime AUC
+    :rtype: float
+    """
+    # Drop rows with missing glucose values
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_aucs = []
+    for d, day_df in df.groupby('date'):
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=6, minutes=30)
+        end_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+
+        daytime_df = day_df[(day_df[TIME] >= start_period) & (day_df[TIME] < end_period)].sort_values(by=TIME)
+
+        if len(daytime_df) < 2:
+            # Not enough data points for integration
+            continue
+
+        # Compute time array in hours relative to start_period
+        times_in_hours = (daytime_df[TIME] - start_period).dt.total_seconds() / 3600.0
+        glucose_values = daytime_df[GLUCOSE].values
+
+        # Use scipy's trapezoid to integrate glucose over the daytime period
+        auc = trapezoid(glucose_values, x=times_in_hours)
+        daily_aucs.append(auc)
+
+    return np.nan if not daily_aucs else np.mean(daily_aucs)
+
+def nocturnal_auc(df: pd.DataFrame) -> float:
+    """
+    Calculates the mean nocturnal AUC (Area Under the Curve) of glucose 
+    between 23:30 and 06:30 for each day, and then averages these daily AUCs.
+
+    For each date d, we define the nocturnal period as d 23:30 to (d+1) 06:30.
+    
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the mean nocturnal AUC
+    :rtype: float
+    """
+    df = df.dropna(subset=[GLUCOSE]).copy()
+    df['date'] = df[TIME].dt.date
+
+    daily_aucs = []
+    unique_dates = sorted(df['date'].unique())
+
+    for d in unique_dates:
+        start_period = pd.to_datetime(d) + pd.Timedelta(hours=23, minutes=30)
+        end_period = start_period + pd.Timedelta(hours=6, minutes=30)
+
+        night_df = df[(df[TIME] >= start_period) & (df[TIME] < end_period)].sort_values(by=TIME)
+
+        if len(night_df) < 2:
+            # Not enough data points for integration
+            continue
+
+        # Compute time array in hours relative to start_period
+        times_in_hours = (night_df[TIME] - start_period).dt.total_seconds() / 3600.0
+        glucose_values = night_df[GLUCOSE].values
+
+        # Use scipy's trapezoid to integrate glucose over the nocturnal period
+        auc = trapezoid(glucose_values, x=times_in_hours)
+        daily_aucs.append(auc)
+
+    return np.nan if not daily_aucs else np.mean(daily_aucs)
+
+
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
 
@@ -721,7 +976,9 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "COGI": COGI(data),
       "CONGA": CONGA(data),
       "CV": CV(data),
+      "Daytime AUC": auc_daytime(data),
       "eA1c": eA1c(data),
+      "FBG": FBG(data),
       "First Quartile": summary[1],
       "GMI": GMI(data),
       "GRADE": GRADE(data),
@@ -736,16 +993,22 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "IGC": IGC(data),
       "J-Index": j_index(data),
       "LBGI": LBGI(data),
+      "LSBG": LSBG(data),
       "MAG": MAG(data),
       "MAGE": MAGE(data),
       "Maximum": summary[4],
       "Mean": mean(data),
+      "Mean 24h Glucose": mean_24h(data),
+      "Mean 24h AUC": mean_24h_auc(data),
       "Mean Absolute Differences": mean_absolute_differences(data),
+      "Mean Daytime": mean_daytime(data),
+      "Mean Nocturnal": mean_nocturnal(data),
       "Median": summary[2],
       "Median Absolute Deviation": median_absolute_deviation(data),
       "Minimum": summary[0],
       "MODD": MODD(data),
       "M-Value": m_value(data),
+      "Nocturnal AUC": nocturnal_auc(data),
       "Number of Readings": number_readings(data),
       "Percent Time Above Range (180)": percent_time_above_range(data),
       "Percent Time Below Range (70)": percent_time_below_range(data),

@@ -477,13 +477,81 @@ def delta(df: pd.DataFrame) -> float:
     """
     return abs(peak(df) - baseline(df))
 
-def event_metrics(df: pd.DataFrame, event: pd.Series) -> pd.DataFrame:
-   """Calculates basic metrics for events (baseline, peak, delta, and iAUC)
+def post_event_glucoses(data: pd.DataFrame, event_time: pd.Timestamp, times: list[int], glucose_col: str = GLUCOSE) -> dict:
+    """
+    Returns the glucose values closest to the specified times (in minutes) after the given event_time.
+
+    :param data: Pandas DataFrame containing the CGM data
+    :type data: pd.DataFrame
+    :param event_time: The time of the event
+    :type event_time: pd.Timestamp
+    :param times: A list of integers representing the number of minutes after event_time for which to find the glucose values
+    :type times: list[int]
+    :param glucose_col: The name of the glucose column in the data, defaults to GLUCOSE
+    :type glucose_col: str, optional
+    :return: A dictionary where keys are strings like "X-min Post Event" and values are the corresponding glucose readings or np.nan if not found
+    :rtype: dict
+    """
+    result = {}
+
+    # Always include 0-min to have a reference point
+    if 0 not in times:
+       times = [0] + times
+
+    for t in times:
+        key = f"{t}-min Post Event"
+        result[key] = np.nan
+        post_time = event_time + pd.Timedelta(minutes=t)
+
+        # Check if the desired time is within the range of the data
+        if not data.empty and data[TIME].min() <= post_time <= data[TIME].max():
+            closest_idx = (data[TIME] - post_time).abs().idxmin()
+            result[key] = data.loc[closest_idx, glucose_col]
+
+    return result
+
+def post_event_aucs(data: pd.DataFrame, event_time: pd.Timestamp, durations: list[int], glucose_col: str = GLUCOSE) -> dict:
+    """
+    Calculates AUC values for multiple durations (in minutes) starting from the given event_time.
+    
+    :param data: Pandas DataFrame containing the CGM data
+    :type data: pd.DataFrame
+    :param event_time: The time of the event
+    :type event_time: pd.Timestamp
+    :param durations: A list of integers representing the number of minutes after event_time for which to calculate the AUC
+    :type durations: list[int]
+    :param glucose_col: The name of the glucose column in the data, defaults to GLUCOSE
+    :type glucose_col: str, optional
+    :return: A dictionary where keys are strings like "X-min AUC" and values are the corresponding AUC readings or np.nan if no data is available
+    :rtype: dict
+    """
+    result = {}
+    for d in durations:
+        key = f"{d}-min AUC"
+        end_time = event_time + pd.Timedelta(minutes=d)
+        subset = data[(data[TIME] >= event_time) & (data[TIME] <= end_time)].copy()
+
+        if subset.empty:
+            result[key] = np.nan
+        else:
+            result[key] = AUC(subset)
+    return result
+
+def event_metrics(
+      df: pd.DataFrame,
+      event: pd.Series,
+      post_times: list[int] = [60, 120],
+      post_auc_times: list[int] = [120]
+) -> pd.DataFrame:
+   """Calculates basic metrics for events (baseline, peak, delta, iAUC, and
+   0-h, 1-h, and 2-h post event glucose values, and 2-h post event AUC)
 
    :param df: Pandas DataFrame containing preprocessed CGM data
    :type df: pandas.DataFrame
    :param event: Pandas Series with fields that represent an 'event'
    :type event: pandas.Series
+   :param post_times: A list of integers representing the number of minutes after event_time for which to find the glucose values
+   :type post_times: list[int], optional (defaults to [0, 60, 120] for 0-h, 1-h and 2-h post event)
    :return: Pandas DataFrame containing the basic metrics for the given event
    :rtype: pandas.DataFrame
    """
@@ -502,6 +570,27 @@ def event_metrics(df: pd.DataFrame, event: pd.Series) -> pd.DataFrame:
    metrics["Delta"] = delta(data)
    metrics["AUC"] = AUC(data)
    metrics["iAUC"] = iAUC(data, baseline(data))
+
+   # Get post-event glucose values (including 0-min)
+   post_values = post_event_glucoses(data, datetime, post_times, GLUCOSE)
+   for k, v in post_values.items():
+      metrics[k] = v
+   
+   # Compute deltas from 0-min Post Event
+   zero_min_val = metrics["0-min Post Event"]
+   for t in post_times:
+      if t == 0:
+         continue
+      post_key = f"{t}-min Post Event"
+      delta_key = f"{t}-min Delta"
+      if post_key in metrics and not np.isnan(metrics[post_key]) and not np.isnan(zero_min_val):
+         metrics[delta_key] = metrics[post_key] - zero_min_val
+      else:
+         metrics[delta_key] = np.nan
+
+   auc_values = post_event_aucs(data, datetime, post_auc_times, GLUCOSE)
+   for k, v in auc_values.items():
+      metrics[k] = v
 
    return metrics.to_frame().T
 
@@ -565,23 +654,26 @@ def create_event_features_helper(
       features[f"Mean Minimum Glucose of {type}s"] = nadir(event_data)
       features[f"Mean Maximum Glucose of {type}s"] = peak(event_data)
 
-      extrema = event_data[event_data[TIME] == event[TIME]].squeeze()
-      base = baseline(event_data)
-      amplitude = extrema[GLUCOSE] - base
+      event_time = event[TIME]
+      closest_idx = (event_data[TIME] - event_time).abs().idxmin()
+      event_glucose = event_data.loc[closest_idx, GLUCOSE]
+
+      peak_glucose = peak(event_data)
+      peak_time = event_data.loc[event_data[GLUCOSE].idxmax(), TIME]
+      amplitude = peak_glucose - event_glucose
       features[f"Mean Amplitude of {type}s"].append(abs(amplitude))
 
-      delta_time_start = ((extrema[TIME] - event_data[TIME].iloc[0]).total_seconds() / 60)
-      delta_time_end = ((extrema[TIME] - event_data[TIME].iloc[-1]).total_seconds() / 60)
-      start_slope = 0 if delta_time_start == 0 else (amplitude / delta_time_start)
-      end_slope = 0 if delta_time_end == 0 else (amplitude / delta_time_end)
-      if amplitude >= 0:
-         features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(abs(start_slope))
-         features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(-1 * abs(end_slope))
-      else:
-         features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(abs(end_slope))
-         features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(-1 * abs(start_slope))
+      time_diff_to_peak = (peak_time - event_time).total_seconds() / 60.0
+      slope_to_peak = (peak_glucose - event_glucose) / time_diff_to_peak if time_diff_to_peak != 0 else np.nan
+      features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(slope_to_peak)
 
-      features[f"Mean iAUC of {type}s"].append(iAUC(event_data, base))
+      end_time = event_data[TIME].iloc[-1]
+      end_glucose = event_data[GLUCOSE].iloc[-1]
+      time_diff_peak_to_end = (end_time - peak_time).total_seconds() / 60.0
+      slope_peak_to_end = (end_glucose - peak_glucose) / time_diff_peak_to_end if time_diff_peak_to_end != 0 else np.nan
+      features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(slope_peak_to_end)
+
+      features[f"Mean iAUC of {type}s"].append(iAUC(event_data, event_glucose))
 
    features = {k: np.mean(v) for k, v in features.items()}
    features[f"Mean # of {type}s per day"] = sub_events.shape[0] / len(df[TIME].dt.date.unique())

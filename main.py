@@ -5,7 +5,7 @@ from events import *
 from plots import *
 
 def main():
-   df = import_directory("datasets")
+   df = import_data("datasets")
    for index, row in create_features(df).iterrows():
       print(row)
 
