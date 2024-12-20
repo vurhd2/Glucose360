@@ -89,14 +89,15 @@ def daily_plot(
 
    fig = make_subplots(rows=len(days), cols=2 if show_events else 1, column_widths=[0.66,0.34] if show_events else None,
                         specs=[[{"type":"scatter"}, {"type":"table"}] for _ in range(len(days))] if show_events else None,
-                        horizontal_spacing=0.01 if show_events else None)
+                        horizontal_spacing=0.01 if show_events else None,
+                        vertical_spacing=0.05 if show_events else None)
 
    num_events = 0
 
    for idx, (day, dataset) in enumerate(data.groupby("Day"), start=1):
       fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day), showlegend=False), row=idx, col=1)
-      fig.update_xaxes(range=[pd.Timestamp(day) - offset, pd.Timestamp(day) + pd.Timedelta(days=1) + offset], row=idx, col=1)
-      fig.update_yaxes(title_text="Glucose Value (mg/dL)", row=idx, col=1)
+      fig.update_xaxes(range=[pd.Timestamp(day) - offset, pd.Timestamp(day) + pd.Timedelta(days=1) + offset], row=idx, col=1, tickfont_size=20, titlefont_size=35)
+      fig.update_yaxes(title_text="Glucose Value (mg/dL)", tickfont_size=20, titlefont_size=35, row=idx, col=1)
 
       if show_events:
          day_events = events[(events[TIME].dt.date == day) & (events[ID] == id)].sort_values(TIME)
@@ -105,9 +106,9 @@ def daily_plot(
             table_body = [day_events[TIME].dt.time.astype(str).tolist(), day_events[DESCRIPTION].tolist()]
             fig.add_trace(
                go.Table(
-                  columnwidth=[10,40],
-                  header=dict(values = [["<b>Time</b>"], ["<b>Description</b>"]],font=dict(size=11)),
-                  cells=dict(values=table_body,align=['left', 'left'],font=dict(size=10),)
+                  columnwidth=[25,25],
+                  header=dict(values = [["<b>Time</b>"], ["<b>Description</b>"]],font=dict(size=22)),
+                  cells=dict(values=table_body,align=['left', 'left'],font=dict(size=20))
                ), row=idx, col=2
             )
 
@@ -122,16 +123,19 @@ def daily_plot(
                   name=row[TYPE], legendgroup=row[TYPE], showlegend=(not already_rendered)), row=idx, col=1)
 
    fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
-   fig.update_layout(title=f"Daily Plot for {id}", height=height, showlegend=True)
+   fig.update_layout(title=f"Daily Plot for {id}", height=height, showlegend=False, titlefont_size=40)
 
    if save: 
-      fig.write_image(f"{id}_daily_plot.pdf", width=1500, height=height)
-      fig.write_html(f"{id}_daily_plot.html")
+      path = os.path.join(save, f"{id}_daily_plot")
+      fig.write_image(path + ".pdf", width=1500, height=height)
+      fig.write_image(path + ".png", width=1500, height=height)
+      fig.write_image(path + ".jpeg", width=1500, height=height)
+      fig.write_html(path +".html")
 
    if app: return fig
    fig.show()
 
-def event_plot_all(df: pd.DataFrame, id: str, events: pd.DataFrame, type: str):
+def event_plot_all(df: pd.DataFrame, id: str, events: pd.DataFrame, type: str, save: bool = False):
     """Graphs all event plots of a certain type for the given patient within the given DataFrame. 
 
     :param df: the DataFrame (following package guidelines) containing the CGM data to plot
@@ -145,9 +149,9 @@ def event_plot_all(df: pd.DataFrame, id: str, events: pd.DataFrame, type: str):
     """
     relevant_events = events[(events[ID] == id) & (events[TYPE] == type)]
     for index, event in relevant_events.iterrows():
-        event_plot(df, id, event, relevant_events)
+        event_plot(df, id, event, relevant_events, save=save)
 
-def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame = None, app: bool = False):
+def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame = None, save: bool = False, app: bool = False):
    """Graphs an event plot for the given patient within the given DataFrame. 
 
     :param df: the DataFrame (following package guidelines) containing the CGM data to plot
@@ -171,13 +175,19 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
 
    data["Day"] = data[TIME].dt.date
    subplot_figs = [go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers', name=str(day)) for day, dataset in data.groupby("Day")]
-   fig = go.Figure(data=subplot_figs, layout=go.Layout(title=f"Event Plot for {id}"))
+   fig = go.Figure(data=subplot_figs, layout=go.Layout(title=f"Event Plot for {id}", titlefont_size=40, legend=dict(font=dict(size=20))))
 
    event_data = events[events[ID] == id] if events is not None else pd.DataFrame()
    if not event_data.empty: create_event_lines(fig, event_data)
 
-   fig.update_xaxes(type="date", range=[before, after])
-   fig.update_yaxes(title_text="Glucose Value (mg/dL)")
+   fig.update_xaxes(type="date", range=[before, after], tickfont_size=20, titlefont_size=35)
+   fig.update_yaxes(title_text="Glucose Value (mg/dL)", range=[85, 170], tickfont_size=20, titlefont_size=35)
+
+   if save: 
+      path = os.path.join(save, f"{id}_event_plot")
+      fig.write_image(path + ".png", width=1500, height=1000)
+      fig.write_html(path +".html")
+
    if app: return fig
    fig.show()
 
@@ -202,7 +212,7 @@ def create_event_lines(fig: go.Figure, events: pd.DataFrame):
          type = getattr(event, TYPE)
          already_rendered = (type in rendered_types) 
          if (not already_rendered): rendered_types.append(type)
-         fig.add_vline(x=time, line_dash="dash", line_color=color_map[type], name=type, legendgroup=type, showlegend=(not already_rendered))
+         fig.add_vline(x=time, line_width=3, line_dash="dash", line_color=color_map[type], name=type, legendgroup=type, showlegend=(not already_rendered))
 
 def weekly_plot_all(df: pd.DataFrame, save: str = None, height: int = 1000):
    """Graphs weekly plots for all of the patients within the given DataFrame. 
@@ -262,10 +272,17 @@ def weekly_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 1000,
       last_end = last_start + pd.Timedelta(weeks=1)
       fig.update_xaxes(range=[first_start - offset_before, first_end + offset_after], row=1, col=1)
       fig.update_xaxes(range=[last_start - offset_before, last_end + offset_after], row=len(weekly_dfs), col=1)
-   fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
-   fig.update_xaxes(tickformat="%B %d, %Y <br> (%a)")
+   fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10], tickfont_size=20, titlefont_size=15)
+   fig.update_xaxes(tickformat="%B %d, %Y <br> (%a)", tickfont_size=15, titlefont_size=30)
 
-   fig.update_layout(title=f"Weekly Plot for {id}", height=height, showlegend=False)
+   fig.update_layout(title=f"Weekly Plot for {id}", titlefont_size=30, height=height, showlegend=False)
+
+   if save: 
+      path = os.path.join(save, f"{id}_weekly_plot")
+      fig.write_image(path + ".pdf", width=1500, height=height)
+      fig.write_image(path + ".png", width=1500, height=height)
+      fig.write_image(path + ".jpeg", width=1500, height=height)
+      fig.write_html(path +".html")
 
    if app: return fig
    fig.show()
@@ -284,7 +301,7 @@ def spaghetti_plot_all(df: pd.DataFrame, chunk_day: bool = False, save: str = No
     :type height: int, optional
    """
     for id, data in df.groupby(ID):
-        spaghetti_plot(data, id, chunk_day, height)
+        spaghetti_plot(df=data, id=id, chunk_day=chunk_day, save=save, height=height)
 
 def spaghetti_plot(df: pd.DataFrame, id: str, chunk_day: bool = False, save: str = None, height: int = 600, app=False):
     """Graphs a spaghetti plot for the given patient within the given DataFrame. 
@@ -312,9 +329,18 @@ def spaghetti_plot(df: pd.DataFrame, id: str, chunk_day: bool = False, save: str
     data.sort_values(by=[TIME], inplace=True)
 
     fig = px.line(data, x="Time", y=GLUCOSE, color="Day", title=f"Spaghetti Plot for {id}", height=height, facet_col="Day Chunking" if chunk_day else None)
-    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time") # shows only the times for the x-axis
-    fig.update_yaxes(title_text="Glucose Value (mg/dL)", row=1, col=1)
-    
+    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time", tickfont_size=20, titlefont_size=35) # shows only the times for the x-axis
+    fig.update_yaxes(title_text="Glucose Value (mg/dL)", tickfont_size=20, titlefont_size=35, row=1, col=1)
+    fig.update_annotations(font_size=35)
+    fig.update_layout(title=dict(font=dict(size=40)), legend=dict(font=dict(size=30)))
+
+    if save: 
+      path = os.path.join(save, f"{id}_spaghetti_plot")
+      fig.write_image(path + ".pdf", width=1500, height=height)
+      fig.write_image(path + ".png", width=1500, height=height)
+      fig.write_image(path + ".jpeg", width=1500, height=height)
+      fig.write_html(path +".html")
+
     if app: return fig
     fig.show()
 
@@ -389,9 +415,9 @@ def AGP_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 600, app
     fig.add_hline(y=70, line_color="lime")
     fig.add_hline(y=140, line_color="lime")
     fig.add_hline(y=180, line_color="green")
-    fig.update_layout(title={"text": f"AGP Plot for {id}"}, height=height, yaxis_range = [35,405])
-    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time") # shows only the times for the x-axis
-    fig.update_yaxes(title_text="Glucose Value (mg/dL)")
+    fig.update_layout(title={"text": f"AGP Plot for {id}", "font": {"size":30}}, height=height, yaxis_range = [35,405], legend=dict(font=dict(size=30)))
+    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time", tickfont_size=20, titlefont_size=25) # shows only the times for the x-axis
+    fig.update_yaxes(title_text="Glucose Value (mg/dL)", tickfont_size=20, titlefont_size=25)
 
     if app: return fig
     fig.show()
@@ -409,7 +435,7 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
     :return: the AGP-report in string form if path is False, otherwise None
     :rtype: str | None
    """
-   fig = make_subplots(rows = 1, cols = 2, specs=[[{"type": "bar"}, {"type": "table"}]])
+   fig = make_subplots(rows = 1, cols = 2, specs=[[{"type": "table"}, {"type": "bar"}]])
    
    patient_data = df.loc[id]
    TIR = {"< 54 mg/dL": percent_time_in_range(patient_data, 0, 53),
@@ -427,8 +453,8 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
                        "> 250 mg/dL": "rgba(241,136,64,255)"}
    
    for key, value in TIR.items():
-      fig.add_trace(go.Bar(name=key, x=["TIR"], y=[value], marker=dict(color=COLORS[key]), text=[round(value, 2)], textposition="inside"), row=1, col=1)
-   fig.update_layout(barmode='stack')
+      fig.add_trace(go.Bar(name=key, x=["TIR"], y=[value], marker=dict(color=COLORS[key]), text=[round(value, 2)], textposition="inside"), row=1, col=2)
+   fig.update_layout(barmode='stack', height=600, font=dict(size=20))
    
    ave_glucose = mean(patient_data)
    gmi = GMI(patient_data)
@@ -437,7 +463,7 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
    days = patient_data[TIME].dt.date
    table_body = [["Test Patient ID:", f"{len(days.unique())} Days:", "Average Glucose (mg/dL):", "Glucose Management Indicator:", "Glucose Variability:"], 
                  [id, f"{days.iloc[0]} to {days.iloc[-1]}", str(round(ave_glucose, 2)), str(round(gmi, 2)), str(round(cv, 2))]]
-   fig.add_trace(go.Table(cells=dict(values=table_body,align=['left', 'center'],font=dict(size=15),height=50)), row=1, col=2)
+   fig.add_trace(go.Table(cells=dict(values=table_body,align=['left', 'center'],font=dict(size=25),height=50)), row=1, col=1)
    
    agp = AGP_plot(df, id, app=True); 
    weekly = weekly_plot(df, id, height=500, app=True); 

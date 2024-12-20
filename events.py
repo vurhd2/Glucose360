@@ -500,6 +500,7 @@ def event_metrics(df: pd.DataFrame, event: pd.Series) -> pd.DataFrame:
    metrics["Baseline"] = baseline(data)
    metrics["Peak"] = peak(data)
    metrics["Delta"] = delta(data)
+   metrics["AUC"] = AUC(data)
    metrics["iAUC"] = iAUC(data, baseline(data))
 
    return metrics.to_frame().T
