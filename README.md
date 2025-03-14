@@ -104,7 +104,7 @@ daily_plot(df)  # Time series plot
 AGP_plot(df)  # Ambulatory Glucose Profile
 ```
 
-For a more detailed walkthrough, see [guide.ipynb](./guide.ipynb).
+For a more detailed walkthrough, see [guide.ipynb](./examples/guide.ipynb).
 
 ---
 
