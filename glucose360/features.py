@@ -5,10 +5,22 @@ from multiprocessing import Pool
 import os
 from scipy.integrate import trapezoid
 
+# Get package config path
 dir_path = os.path.dirname(os.path.realpath(__file__))
-config_path = os.path.join(dir_path, "config.ini")
+package_config_path = os.path.join(dir_path, "config.ini")
+
+# Get root config path (relative to current working directory)
+root_config_path = os.path.join(os.getcwd(), "config.ini")
+
+# Initialize config parser
 config = configparser.ConfigParser()
-config.read(config_path)
+
+# Try to load root config first, fall back to package config
+if os.path.exists(root_config_path):
+    config.read(root_config_path)
+else:
+    config.read(package_config_path)
+
 ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']

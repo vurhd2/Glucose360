@@ -1,8 +1,8 @@
 import pandas as pd
-from preprocessing import *
-from features import *
-from events import *
-from plots import *
+from glucose360.preprocessing import *
+from glucose360.features import *
+from glucose360.events import *
+from glucose360.plots import *
 
 def main():
    df = import_data("datasets")

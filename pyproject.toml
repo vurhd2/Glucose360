@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=75.0", 
+            "pandas==2.1.1", 
+            "numpy==1.26.1", 
+            "scipy==1.11.3", 
+            "plotly==5.21.0", 
+            "kaleido==0.2.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glucose360"
+version = "0.0.1"
+authors = [
+  { name="Dhruv Aron", email="dhruv.aron@gmail.com" },
+  { name="Ben W. Ehlert", email="behlert@stanford.edu" }
+]
+description = "Python package by Stanford University's Snyder Lab for holistic continuous glucose monitoring (CGM) analysis for both patients and researchers."
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/vurhd2/Python-CGM-Package"
+Issues = "https://github.com/vurhd2/Python-CGM-Package/issues"
+
+[tool.setuptools]
+packages = ["glucose360"]
+
+[tool.setuptools.package-data]
+glucose360 = ["config.ini", "event_colors.json"]

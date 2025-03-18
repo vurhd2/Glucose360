@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import preprocessing as pp
+import glucose360.preprocessing as pp
 import configparser
 import json
 
@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 
 import os
 
-from features import percent_time_in_range, percent_time_in_tight_range, mean, CV, GMI
+from glucose360.features import percent_time_in_range, percent_time_in_tight_range, mean, CV, GMI
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 config_path = os.path.join(dir_path, "config.ini")

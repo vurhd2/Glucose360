@@ -1,7 +1,7 @@
-from preprocessing import import_data, segment_data
-from events import *
-from plots import *
-from features import create_features
+from glucose360.preprocessing import import_data, segment_data
+from glucose360.events import *
+from glucose360.plots import *
+from glucose360.features import create_features
 import pandas as pd
 import configparser
 
