@@ -2,29 +2,58 @@ import os, glob
 import pandas as pd
 import configparser
 import zipfile, tempfile
+from importlib import resources
+import numpy as np
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-config_path = os.path.join(dir_path, "config.ini")
-config = configparser.ConfigParser()
-config.read(config_path)
-ID = config['variables']['id']
-GLUCOSE = config['variables']['glucose']
-TIME = config['variables']['time']
+# Initialize config at module level
+
 
 # globals for glucose values to replace "Low" and "High" with in the CGM data
 LOW = 40
 HIGH = 400
 
+def get_config_path() -> str:
+    """Returns the full path to the config.ini file in the working directory."""
+    return os.path.join(os.getcwd(), "config.ini")
+
+def save_config(config: configparser.ConfigParser):
+    """Helper to save the current state of the config back to 'config.ini' in the working directory."""
+    with open(get_config_path(), 'w') as configfile:
+        config.write(configfile)
+
+def load_config() -> configparser.ConfigParser:
+    """Loads the working-directory 'config.ini' if present; otherwise loads
+    the default config from the package and writes it out to the working dir.
+    Returns a ConfigParser object."""
+    config = configparser.ConfigParser()
+    wd_config_path = get_config_path()
+    if os.path.exists(wd_config_path):
+        # Use the config file in the working directory
+        config.read(wd_config_path)
+    else:
+        # Otherwise read the default config from the package
+        with resources.files("glucose360").joinpath("config.ini").open("r") as f:
+            config.read_file(f)
+        # Write it to the working directory for future use/modifications
+        save_config(config)
+    return config
+
+config = load_config()
+INTERVAL = int(config["variables"]["interval"])
+ID = config['variables']['id']
+GLUCOSE = config['variables']['glucose']
+TIME = config['variables']['time']
+
 def import_data(
-   path: str,
-   name: str = None,
-   sensor: str = "dexcom",
-   id_template: str = None,
-   glucose: str = None,
-   time: str = None,
-   interval: int = 5,
-   max_gap: int = 45,
-   output = print
+    path: str,
+    name: str = None,
+    sensor: str = "dexcom",
+    id_template: str = None,
+    glucose: str = None,
+    time: str = None,
+    interval: int | None = None,
+    max_gap: int = 45,
+    output = print
 ) -> pd.DataFrame:
     """Returns a Multiindexed Pandas DataFrame containing all of the csv data found at the given path.
     The path can lead to a directory, .zip file, or a .csv file. The returned DataFrame holds columns 
@@ -40,8 +69,8 @@ def import_data(
     :type glucose: str, optional
     :param time: the name of the column containing the timestamps in the .csv files (if different than the default for the CGM sensor being used), defaults to None
     :type time: str, optional
-    :param interval: the resampling interval (in minutes) that the data should follow, defaults to 5
-    :type interval: int, optional
+    :param interval: the resampling interval (in minutes) that the data should follow. If None, uses the interval from config, defaults to None
+    :type interval: int | None, optional
     :param max_gap: the maximum amount of minutes a gap in the data can be interpolated, defaults to 45 
        (filling in a gap with a longer duration would be considered extrapolation)
     :type max_gap: int, optional
@@ -52,12 +81,15 @@ def import_data(
     >>> path_to_data = "datasets/patient_data.csv"
     >>> df = import_data(path_to_data)
     """
-    # update the config with the resampling interval the user chose
-    updated_config = config['variables'] 
-    updated_config['interval'] = str(interval)
-    config["variables"] = updated_config
-    with open('config.ini', 'w') as configfile:
-      config.write(configfile)
+    # If interval is specified, update the config. Otherwise use the config value
+    if interval is not None:
+        updated_config = config['variables']
+        updated_config['interval'] = str(interval)
+        config["variables"] = updated_config
+        # Write changes to working directory config
+        save_config(config)
+    else:
+        interval = int(config['variables']['interval'])
 
     # get file extension of where the given path points
     ext = os.path.splitext(path)[1]
@@ -94,7 +126,7 @@ def _import_directory(
     id_template: str = None,
     glucose: str = None,
     time: str = None,
-    interval: int = 5,
+    interval: int | None = None,
     max_gap: int = 45,   
     output = print
 ) -> pd.DataFrame:
@@ -151,7 +183,7 @@ def _import_csv(
     id_template: str = None,
     glucose: str = None,
     time: str = None,
-    interval: int = 5, 
+    interval: int | None = None, 
     max_gap: int = 45
 ) -> pd.DataFrame:
     """Returns a Multiindexed Pandas DataFrame containing all of the csv data found at the given path.
@@ -378,7 +410,7 @@ def _id_from_filename(name: str, id_template: str):
 
 def preprocess_data(
    df: pd.DataFrame,
-   interval: int = 5,
+   interval: int | None = None,
    max_gap: int = 45
 ) -> pd.DataFrame:
    """Returns a Pandas DataFrame containing the preprocessed CGM data within the given dataframe.
@@ -387,8 +419,8 @@ def preprocess_data(
    
    :param df: the Pandas DataFrame containing the CGM data to preprocess
    :type df: pandas.DataFrame
-   :param interval: the resampling interval (in minutes) the CGM data should follow, defaults to 5
-   :type interval: int, optional
+   :param interval: the resampling interval (in minutes) that the data should follow. If None, uses the interval from config, defaults to None
+   :type interval: int | None, optional
    :param max_gap: the maximum duration (in minutes) of a gap in the data that should be interpolated, defaults to 45
    :type max_gap: int, optional
    :return: A Pandas DataFrame containing the preprocessed CGM data. This DataFrame is indexed by identification and holds columns for
@@ -408,6 +440,8 @@ def preprocess_data(
    df[GLUCOSE] = pd.to_numeric(df[GLUCOSE])
 
    df = df[[TIME, GLUCOSE, ID]].copy()
+   if interval is None:
+       interval = int(config['variables']['interval'])
    df = _resample_data(df, interval, max_gap)
    df = df.loc[df[GLUCOSE].first_valid_index():df[GLUCOSE].last_valid_index()]
    df = _chunk_day(_chunk_time(df))

@@ -4,11 +4,12 @@ from scipy.integrate import trapezoid
 import configparser
 import glob, os, zipfile, tempfile
 import math
+from importlib import resources
+from glucose360.preprocessing import load_config
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-config_path = os.path.join(dir_path, "config.ini")
-config = configparser.ConfigParser()
-config.read(config_path)
+# Initialize config at module level
+config = load_config()
+INTERVAL = int(config["variables"]["interval"])
 ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
@@ -263,10 +264,11 @@ def get_episodes(
                             _episodes_helper(data, id, "hypo", hypo_lvl1, 1, min_length, end_length),
                             _episodes_helper(data, id, "hypo", hypo_lvl2, 2, min_length, end_length)])
       
-      episodes.sort_values(by=[TIME], inplace=True)
+      if not episodes.empty:
+          episodes = episodes.sort_values(by=[TIME])
       output = pd.concat([output, episodes])
 
-   return output 
+   return output
 
 def get_excursions(
    df: pd.DataFrame, 

@@ -17,7 +17,6 @@ def main():
     cgm_data = preprocessing.import_data(
         path=DATASETS_DIR,
         sensor="dexcom",  # This is the default, but we'll specify it for clarity
-        interval=5,       # 5-minute intervals (default)
         max_gap=45       # Maximum gap of 45 minutes to interpolate (default)
     )
     

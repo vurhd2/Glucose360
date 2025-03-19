@@ -3,19 +3,17 @@ import numpy as np
 import glucose360.preprocessing as pp
 import configparser
 import json
-
+from importlib import resources
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-
 import os
-
+from glucose360.preprocessing import load_config
 from glucose360.features import percent_time_in_range, percent_time_in_tight_range, mean, CV, GMI
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-config_path = os.path.join(dir_path, "config.ini")
-config = configparser.ConfigParser()
-config.read(config_path)
+# Initialize config at module level
+config = load_config()
+INTERVAL = int(config["variables"]["interval"])
 ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']

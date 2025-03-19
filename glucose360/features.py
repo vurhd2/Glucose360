@@ -4,23 +4,12 @@ import configparser
 from multiprocessing import Pool
 import os
 from scipy.integrate import trapezoid
+from importlib import resources
+from glucose360.preprocessing import load_config
 
-# Get package config path
-dir_path = os.path.dirname(os.path.realpath(__file__))
-package_config_path = os.path.join(dir_path, "config.ini")
-
-# Get root config path (relative to current working directory)
-root_config_path = os.path.join(os.getcwd(), "config.ini")
-
-# Initialize config parser
-config = configparser.ConfigParser()
-
-# Try to load root config first, fall back to package config
-if os.path.exists(root_config_path):
-    config.read(root_config_path)
-else:
-    config.read(package_config_path)
-
+# Initialize config at module level
+config = load_config()
+INTERVAL = int(config["variables"]["interval"])
 ID = config['variables']['id']
 GLUCOSE = config['variables']['glucose']
 TIME = config['variables']['time']
@@ -458,9 +447,7 @@ def CONGA(df: pd.DataFrame, n: int = 24) -> float:
     :return: the CONGA for the given CGM trace
     :rtype: float
     """
-    config.read('config.ini')
-    interval = int(config["variables"]["interval"])
-    period = n * (60 / interval)
+    period = n * (60 / INTERVAL)
     return np.std(df[GLUCOSE].diff(periods=period))
 
 # lag is in days
@@ -474,10 +461,7 @@ def MODD(df: pd.DataFrame, lag: int = 1) -> float:
     :return: the MODD for the given CGM trace
     :rtype: float
     """
-    config.read('config.ini')
-    interval = int(config["variables"]["interval"])
-    period = lag * 24 * (60 / interval)
-    
+    period = lag * 24 * (60 / INTERVAL)
     return np.mean(np.abs(df[GLUCOSE].diff(periods=period)))
 
 def mean_absolute_differences(df: pd.DataFrame) -> float:
@@ -530,16 +514,13 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 
    """
    data = df.reset_index(drop=True)
 
-   config.read('config.ini')
-   interval = int(config["variables"]["interval"])
-
    missing = data[GLUCOSE].isnull()
    # create groups of consecutive missing values
    groups = missing.ne(missing.shift()).cumsum()
    # group by the created groups and count the size of each group, then apply it where values are missing
    size_of_groups = data.groupby([groups, missing])[GLUCOSE].transform('size').where(missing, 0)
    # filter groups where size is greater than 0 and take their indexes
-   indexes = size_of_groups[size_of_groups.diff() > (max_gap / interval)].index.tolist()
+   indexes = size_of_groups[size_of_groups.diff() > (max_gap / INTERVAL)].index.tolist()
 
    if not indexes: # no gaps in data larger than max_gap
       return MAGE_helper(df, short_ma, long_ma)
@@ -706,12 +687,10 @@ def ROC(df: pd.DataFrame, timedelta: int = 15) -> pd.Series:
    :return: a Pandas Series with the rate of change in glucose values at every data point
    :rtype: 'pandas.Series'
    """
-   config.read('config.ini')
-   interval = int(config["variables"]["interval"])
-   if timedelta < interval:
+   if timedelta < INTERVAL:
       raise Exception("Given timedelta must be greater than resampling interval.")
 
-   positiondelta = round(timedelta / interval)
+   positiondelta = round(timedelta / INTERVAL)
    return df[GLUCOSE].diff(periods=positiondelta) / timedelta
 
 def number_readings(df: pd.DataFrame):
