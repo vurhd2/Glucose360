@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.insert(0, "C:\\Users\\dhruv\\Desktop\\Glucose360\\glucose360\\")
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../glucose360')))
 
 # Configuration file for the Sphinx documentation builder.
 #
