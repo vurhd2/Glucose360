@@ -130,7 +130,7 @@ For a more detailed walkthrough, see [guide.ipynb](./examples/guide.ipynb).
 ## Documentation
 
 Complete documentation is available on ReadTheDocs:  
-[**ReadTheDocs Link**](https://insert-docs-link-here)
+[**ReadTheDocs Link**](https://glucose360.readthedocs.io/en/latest/)
 
 ---
 
