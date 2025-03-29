@@ -25,19 +25,6 @@ def load_config() -> configparser.ConfigParser:
     """Loads the working-directory 'config.ini' if present; otherwise loads
     the default config from the package and writes it out to the working dir.
     Returns a ConfigParser object."""
-
-    return {
-      "variables": {
-         "interval": 5,
-         "id": "ID",
-         "glucose": "Glucose",
-         "time": "Time",
-         "before": "Before",
-         "after": "After",
-         "type": "Type",
-         "description": "Description"
-      }
-    }
     config = configparser.ConfigParser()
     wd_config_path = get_config_path()
     if os.path.exists(wd_config_path):
