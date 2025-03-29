@@ -1,7 +1,7 @@
 Plots
 ==========
 
-.. automodule:: glucose360.plots
+.. automodule:: plots
     :members:
     :undoc-members:
     :show-inheritance:

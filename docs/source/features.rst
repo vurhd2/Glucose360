@@ -1,7 +1,7 @@
 Features
 ==========
 
-.. automodule:: glucose360.features
+.. automodule:: features
     :members:
     :undoc-members:
     :show-inheritance:

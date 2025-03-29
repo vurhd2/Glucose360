@@ -1,7 +1,7 @@
 Events
 ==========
 
-.. automodule:: glucose360.events
+.. automodule:: events
     :members:
     :undoc-members:
     :show-inheritance:

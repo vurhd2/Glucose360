@@ -1,7 +1,7 @@
 Preprocessing
 ==========
 
-.. automodule:: glucose360.preprocessing
+.. automodule:: preprocessing
     :members:
     :undoc-members:
     :show-inheritance:
