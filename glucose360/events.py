@@ -5,7 +5,7 @@ import configparser
 import glob, os, zipfile, tempfile
 import math
 from importlib import resources
-from preprocessing import load_config
+from glucose360.preprocessing import load_config
 
 # Initialize config at module level
 config = load_config()
