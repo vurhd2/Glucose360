@@ -52,9 +52,19 @@ app_ui = ui.page_fluid(
             "Import Data",
             ui.layout_columns(
                 ui.card(
-                    ui.input_checkbox("use_example_data", "Use Example Data", False),
-                    ui.output_ui("sensor_select"),        # rendered if example_data is NOT used
-                    ui.output_ui("upload_data_button"),   # rendered if example_data is NOT used
+                    # Replaced the checkbox with a radio button:
+                    ui.input_radio_buttons(
+                        "data_source_choice",
+                        "How would you like to load data?",
+                        choices={
+                            "example": "Use Example Data",
+                            "upload": "Upload Your Own Data"
+                        },
+                        selected="upload"  # default to "upload", or "example" if you prefer
+                    ),
+                    # These two UI outputs are now conditional on the radio selection
+                    ui.output_ui("sensor_select"),        
+                    ui.output_ui("upload_data_button"),   
                     ui.card(
                         "Advanced Parameters",
                         ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
@@ -80,7 +90,7 @@ app_ui = ui.page_fluid(
             ui.input_action_button("go_sample_data_tab", "View Sample Data Format Examples"),
         ),
 
-        # 2) TAB: Import Events (separate from data import)
+        # 2) TAB: Import Events
         ui.nav_panel(
             "Import Events",
             ui.output_ui("patient_import_event"),  # The patient to attach the events to
@@ -201,6 +211,7 @@ def server(input, output, session):
 
     # -----------------------------------------------------------------
     # 1) Reactive: df() loads or returns the CGM data
+    #    Re-written to handle the radio button logic
     # -----------------------------------------------------------------
     @reactive.Calc
     def df():
@@ -209,40 +220,48 @@ def server(input, output, session):
         Then it optionally segments the data if a 'split_data' CSV is uploaded.
         Finally it auto-generates curated events (episodes/excursions) to populate events_ref.
         """
-        # Example data path from your repository or local environment:
-        path = "trial_ids.zip"  # You can replace with an actual path if you have example data
-        name = None
-        sensor = "dexcom"
-        id_template = None
-        glucose_col = None
-        time_col = None
+        data_source = input.data_source_choice()  # "example" or "upload"
+        
+        # If user chooses "example"
+        if data_source == "example":
+            # Example data path from your repository:
+            path = "trial_ids.zip"  # adjust as needed
+            name = None
+            sensor = "dexcom"  # or whatever default you want
+            data = import_data(
+                path=path, 
+                name=name,
+                sensor=sensor,
+                interval=input.resample_interval(), 
+                max_gap=input.max_gap(),
+                output=notify
+            )
 
-        # If user is not using example data, read from the user upload
-        if not input.use_example_data():
+        else:
+            # User chooses "upload"
             data_file: list[FileInfo] | None = input.data_import()
-            if data_file is None:
-                return pd.DataFrame()  # No file uploaded yet
+            if not data_file:
+                return pd.DataFrame()  # no file yet
             path = data_file[0]["datapath"]
             name = data_file[0]["name"].split(".")[0]
             sensor = input.sensor()
-            id_template = input.id_template() if input.id_template() != "" else None
-
-            # If user filled in custom column names
+            
+            # By default, None unless the user typed custom columns
             glucose_col = input.glucose_col() if input.glucose_col() else None
             time_col = input.time_col() if input.time_col() else None
+            id_template = input.id_template() if input.id_template() else None
 
-        # Now call your import_data function
-        data = import_data(
-            path=path, 
-            name=name,
-            sensor=sensor,
-            id_template=id_template,
-            glucose=glucose_col,
-            time=time_col,
-            interval=input.resample_interval(), 
-            max_gap=input.max_gap(),
-            output=notify
-        )
+            data = import_data(
+                path=path, 
+                name=name,
+                sensor=sensor,
+                id_template=id_template,
+                glucose=glucose_col,
+                time=time_col,
+                interval=input.resample_interval(), 
+                max_gap=input.max_gap(),
+                output=notify
+            )
 
         # If user uploaded a CSV to split data
         split_file: list[FileInfo] | None = input.split_data()
@@ -358,9 +377,9 @@ def server(input, output, session):
     @render.ui
     def sensor_select():
         """
-        Only appears if use_example_data == False
+        Only appear if data_source_choice == 'upload'
         """
-        if not input.use_example_data():
+        if input.data_source_choice() == "upload":
             return ui.input_select(
                 "sensor", 
                 "Type of CGM Device:", 
@@ -376,9 +395,9 @@ def server(input, output, session):
     @render.ui
     def upload_data_button():
         """
-        Only appears if not using example data.
+        Only appear if data_source_choice == 'upload'
         """
-        if not input.use_example_data():
+        if input.data_source_choice() == "upload":
             return ui.input_file(
                 "data_import", 
                 "Import CGM Data (.csv or .zip file)", 
@@ -390,9 +409,9 @@ def server(input, output, session):
     @render.ui
     def advanced_custom_data_options():
         """
-        Additional text fields for custom column names if user wants to override default sensor columns.
+        Additional text fields for custom columns if data_source_choice == 'upload'.
         """
-        if not input.use_example_data():
+        if input.data_source_choice() == "upload":
             return ui.TagList(
                 ui.input_text("glucose_col", "Name of Glucose Column"),
                 ui.input_text("time_col", "Name of Timestamp Column"),
