@@ -69,6 +69,7 @@ app_ui = ui.page_fluid(
                         "Advanced Parameters",
                         ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
                         ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
+                        ui.output_ui("advanced_parameters_toggles"),
                         ui.output_ui("advanced_custom_data_options"),
                         ui.output_ui("split_data_section"),
                     ),
@@ -247,7 +248,7 @@ def server(input, output, session):
             # By default, None unless the user typed custom columns
             glucose_col = input.glucose_col() if input.glucose_col() else None
             time_col = input.time_col() if input.time_col() else None
-            id_template = input.id_template() if input.id_template() else None
+            id_template = input.id_template() if input.use_id_template() and input.id_template() else None
 
             data = import_data(
                 path=path, 
@@ -263,7 +264,7 @@ def server(input, output, session):
 
         # If user uploaded a CSV to split data
         split_file: list[FileInfo] | None = input.split_data()
-        if split_file is not None:
+        if split_file is not None and input.use_split_data():
             data = segment_data(split_file[0]["datapath"], data)
 
         # Generate curated events automatically (hypo/hyper episodes, excursions)
@@ -276,14 +277,26 @@ def server(input, output, session):
     @render.ui
     def split_data_section():
         """
-        Show the 'Split Data' input only if the user selected 'Upload Your Own Data'.
+        Show the 'Split Data' input only if the user selected 'Upload Your Own Data' and use_split_data is True.
         """
-        if input.data_source_choice() == "upload":
+        if input.data_source_choice() == "upload" and input.use_split_data():
             return ui.input_file(
                 "split_data", 
                 "Split Data", 
                 accept=[".csv"], 
                 multiple=False
+            )
+        return None
+    
+    @render.ui
+    def advanced_parameters_toggles():
+        """
+        Show ID template and split data toggles only if data_source_choice is "upload"
+        """
+        if input.data_source_choice() == "upload":
+            return ui.TagList(
+                ui.input_switch("use_id_template", "Use custom ID?", value=False),
+                ui.input_switch("use_split_data", "Would you like to split each participant's CGM data into custom date/time intervals by uploading a separate CSV file?", value=False),
             )
         return None
     
@@ -394,7 +407,7 @@ def server(input, output, session):
         if input.data_source_choice() == "upload":
             return ui.input_select(
                 "sensor", 
-                "Type of CGM Device:", 
+                "Data Format:", 
                 {
                     "dexcom": "Dexcom",
                     "freestyle libre 2": "FreeStyle Libre 2 or 3",
@@ -422,13 +435,35 @@ def server(input, output, session):
     def advanced_custom_data_options():
         """
         Additional text fields for custom columns if data_source_choice == 'upload'.
+        Only show glucose and timestamp column inputs when sensor type is "columns".
+        Only show ID template input when use_id_template is True.
         """
         if input.data_source_choice() == "upload":
-            return ui.TagList(
-                ui.input_text("glucose_col", "Name of Glucose Column"),
-                ui.input_text("time_col", "Name of Timestamp Column"),
-                ui.input_text("id_template", "Template for ID Retrieval (Regex or Format)"),
-            )
+            if input.sensor() == "columns":
+                return ui.TagList(
+                    ui.input_text("glucose_col", "Name of Glucose Column"),
+                    ui.input_text("time_col", "Name of Timestamp Column"),
+                    ui.input_text("id_template", "Template for ID Retrieval (Regex or Format)") if input.use_id_template() else None,
+                )
+            else:
+                if input.use_id_template():
+                    return ui.TagList(
+                        ui.input_text(
+                            "id_template", 
+                            tags.span(
+                                "Template for ID Retrieval (Regex or Format) ",
+                                tags.span(
+                                    "ℹ️",
+                                    style="font-size: 16px; color: #0d6efd; cursor: pointer;",
+                                    title=(
+                                        "Optional: ."
+                                    )
+                                )
+                            )
+                        ),
+                    )
+                else:
+                    return None
         return None
     
     @reactive.Effect
