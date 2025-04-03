@@ -7,7 +7,7 @@ import os
 
 from shiny import App, ui, render, reactive
 from shiny.types import FileInfo
-from shiny.ui import tags
+from shiny.ui import tags, update_navs
 from shinywidgets import output_widget, render_widget
 
 
@@ -73,6 +73,11 @@ app_ui = ui.page_fluid(
                 "immediately discarded after your session ends. For processing sensitive health data, we strongly recommend "
                 "installing and running the package locally in your secure environment."
             ),
+            ui.hr(),
+            ui.markdown(
+                "If you're **unsure about the correct data format**, please see our sample data."
+            ),
+            ui.input_action_button("go_sample_data_tab", "View Sample Data Format Examples"),
         ),
 
         # 2) TAB: Import Events (separate from data import)
@@ -159,6 +164,22 @@ app_ui = ui.page_fluid(
                 ),
                 ui.card(output_widget("display_event_plot")),
             ),
+        ),
+
+        # 6) TAB: Sample Data Formats
+        ui.nav_panel(
+            "Sample Data Formats",
+            ui.h2("Examples of Common CGM Data Formats"),
+            ui.card(
+                ui.h3("Dexcom CSV Example"),
+                tags.img(src="dexcom_sample.png", style="max-width:100%; height:auto;")
+            ),
+            
+            ui.card(
+                ui.h3("Custom Columns CSV Example"),
+                tags.img(src="custom_columns_sample.png", style="max-width:25%; height:auto;")
+            ),
+            value="sample_data_formats"
         ),
         id="tab",
     )
@@ -378,6 +399,12 @@ def server(input, output, session):
                 ui.input_text("id_template", "Template for ID Retrieval (Regex or Format)"),
             )
         return None
+    
+    @reactive.Effect
+    @reactive.event(input.go_sample_data_tab)
+    def go_to_sample_data_tab():
+        # Switch nav panels to "Sample Data Formats"
+        update_navs("tab", selected="sample_data_formats")
 
     @render.ui
     def patient_import_event():
@@ -774,4 +801,4 @@ def server(input, output, session):
 # ---------------------------------------------------------------------
 # Create the Shiny app
 # ---------------------------------------------------------------------
-app = App(app_ui, server, debug=False)
+app = App(app_ui, server, debug=False, static_assets=os.path.join(os.path.dirname(__file__), "www"))
