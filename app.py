@@ -70,10 +70,8 @@ app_ui = ui.page_fluid(
                         ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
                         ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
                         ui.output_ui("advanced_custom_data_options"),
+                        ui.output_ui("split_data_section"),
                     ),
-                ),
-                ui.card(
-                    ui.input_file("split_data", "Split Data", accept=[".csv"], multiple=False),
                 ),
             ),
             ui.markdown(
@@ -275,6 +273,20 @@ def server(input, output, session):
 
         return data
 
+    @render.ui
+    def split_data_section():
+        """
+        Show the 'Split Data' input only if the user selected 'Upload Your Own Data'.
+        """
+        if input.data_source_choice() == "upload":
+            return ui.input_file(
+                "split_data", 
+                "Split Data", 
+                accept=[".csv"], 
+                multiple=False
+            )
+        return None
+    
     # -----------------------------------------------------------------
     # 2) Bulk Import of Additional Events
     # -----------------------------------------------------------------
