@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import preprocessing as pp
+import glucose360.preprocessing as pp
 import configparser
 import json
 from importlib import resources
@@ -94,8 +94,18 @@ def daily_plot(
 
    for idx, (day, dataset) in enumerate(data.groupby("Day"), start=1):
       fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day), showlegend=False), row=idx, col=1)
-      fig.update_xaxes(range=[pd.Timestamp(day) - offset, pd.Timestamp(day) + pd.Timedelta(days=1) + offset], row=idx, col=1, tickfont_size=20, titlefont_size=35)
-      fig.update_yaxes(title_text="Glucose Value (mg/dL)", tickfont_size=20, titlefont_size=35, row=idx, col=1)
+      fig.update_xaxes(
+          range=[pd.Timestamp(day) - offset, pd.Timestamp(day) + pd.Timedelta(days=1) + offset],
+          row=idx, col=1,
+          tickfont=dict(size=20),
+          title=dict(font=dict(size=35))
+      )
+      fig.update_yaxes(
+          title=dict(text="Glucose Value (mg/dL)", font=dict(size=35)),
+          tickfont=dict(size=20),
+          row=idx,
+          col=1
+      )
 
       if show_events:
          day_events = events[(events[TIME].dt.date == day) & (events[ID] == id)].sort_values(TIME)
@@ -121,7 +131,11 @@ def daily_plot(
                   name=row[TYPE], legendgroup=row[TYPE], showlegend=(not already_rendered)), row=idx, col=1)
 
    fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10])
-   fig.update_layout(title=f"Daily Plot for {id}", height=height, showlegend=False, titlefont_size=40)
+   fig.update_layout(
+       title=dict(text=f"Daily Plot for {id}", font=dict(size=40)),
+       height=height,
+       showlegend=False
+   )
 
    if save: 
       path = os.path.join(save, f"{id}_daily_plot")

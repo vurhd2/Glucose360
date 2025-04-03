@@ -1,5 +1,5 @@
-pandas==2.1.1
-numpy==1.26.1
-scipy==1.11.3
-plotly==5.21.0
-kaleido==0.1.0post1
+kaleido==0.2.1
+numpy==2.2.4
+pandas==2.2.3
+plotly==6.0.1
+scipy==1.15.2
