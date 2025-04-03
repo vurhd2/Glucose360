@@ -30,7 +30,7 @@ This package simplifies the handling of CGM (Continuous Glucose Monitoring) data
 ## Hosted Web UI
 
 If you prefer not to install anything locally, explore our hosted web application here:  
-[**Web App »**](vurhd2.shinyapps.io/pythoncgmpackage/)
+[**Web App »**](https://vurhd2.shinyapps.io/glucose360/)
 
 > **⚠️ Important Privacy Notice**: The hosted web application is provided for demonstration purposes only. Please DO NOT upload any Protected Health Information (PHI) or personally identifiable medical data to this public instance. We do not store any data on our servers - all processing is done in-memory and data is immediately discarded after your session ends. For processing sensitive health data, we strongly recommend installing and running the package locally in your secure environment.
 
