@@ -246,10 +246,14 @@ def server(input, output, session):
             sensor = input.sensor()
             
             # By default, None unless the user typed custom columns
-            glucose_col = input.glucose_col() if input.glucose_col() else None
-            time_col = input.time_col() if input.time_col() else None
-            id_template = input.id_template() if input.use_id_template() and input.id_template() else None
-
+            if input.sensor() == "columns":
+                glucose_col = input.glucose_col() if input.glucose_col() else None
+                time_col = input.time_col() if input.time_col() else None
+                id_template = input.id_template() if input.use_id_template() and input.id_template() else None
+            else:
+                glucose_col = None
+                time_col = None
+                id_template = None
             data = import_data(
                 path=path, 
                 name=name,
@@ -263,9 +267,11 @@ def server(input, output, session):
             )
 
         # If user uploaded a CSV to split data
-        split_file: list[FileInfo] | None = input.split_data()
-        if split_file is not None and input.use_split_data():
-            data = segment_data(split_file[0]["datapath"], data)
+
+        if input.data_source_choice() == "upload" and input.use_split_data():
+            split_file = input.split_data()
+            if split_file:
+                data = segment_data(split_file[0]["datapath"], data)
 
         # Generate curated events automatically (hypo/hyper episodes, excursions)
         auto_events = get_curated_events(data).reset_index(drop=True)
