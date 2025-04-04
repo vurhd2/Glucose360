@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 import os
 from glucose360.preprocessing import load_config
 from glucose360.features import percent_time_in_range, percent_time_in_tight_range, mean, CV, GMI
+from pathlib import Path
 
 # Initialize config at module level
 config = load_config()
@@ -80,7 +81,8 @@ def daily_plot(
    rendered_types = []
    if show_events:
       event_types = events[TYPE].unique()
-      with open('event_colors.json') as colors_file:
+      colors_path = Path(__file__).parent / 'event_colors.json'
+      with open(colors_path) as colors_file:
          color_dict = json.load(colors_file)
          colors = list(color_dict.values())
          color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
@@ -213,7 +215,8 @@ def create_event_lines(fig: go.Figure, events: pd.DataFrame):
    """
    event_types = events[TYPE].unique()
    events[TIME] = pd.to_datetime(events[TIME])
-   with open('event_colors.json') as colors_file:
+   colors_path = Path(__file__).parent / 'event_colors.json'
+   with open(colors_path) as colors_file:
       color_dict = json.load(colors_file)
       colors = list(color_dict.values())
       color_map = {event_type: colors[i] for i, event_type in enumerate(event_types)}
