@@ -50,31 +50,20 @@ app_ui = ui.page_fluid(
         # 1) TAB: Import CGM Data
         ui.nav_panel(
             "Import Data",
-            ui.layout_columns(
-                ui.card(
-                    # Replaced the checkbox with a radio button:
-                    ui.input_radio_buttons(
-                        "data_source_choice",
-                        "How would you like to load data?",
-                        choices={
-                            "example": "Use Example Data",
-                            "upload": "Upload Your Own Data"
-                        },
-                        selected="upload"  # default to "upload", or "example" if you prefer
-                    ),
-                    # These two UI outputs are now conditional on the radio selection
-                    ui.output_ui("sensor_select"),        
-                    ui.output_ui("upload_data_button"),   
-                    ui.card(
-                        "Advanced Parameters",
-                        ui.input_numeric("resample_interval", "Resampling Interval", 5, min=1),
-                        ui.input_numeric("max_gap", "Maximum Gap for Interpolation", 45),
-                        ui.output_ui("advanced_parameters_toggles"),
-                        ui.output_ui("advanced_custom_data_options"),
-                        ui.output_ui("split_data_section"),
-                    ),
-                ),
+            # Let user choose: "Use Example Data" or "Upload Your Own Data"
+            ui.input_radio_buttons(
+                "data_source_choice",
+                "How would you like to load data?",
+                choices={
+                    "example": "Use Example Data",
+                    "upload": "Upload Your Own Data"
+                },
+                selected="upload"
             ),
+            # A single UI placeholder that will dynamically show the correct inputs
+            ui.output_ui("import_data_ui"),
+
+            ui.hr(),
             ui.markdown(
                 "**⚠️ Important Privacy Notice**: The hosted web application is provided for demonstration purposes only. "
                 "**Please DO NOT upload any Protected Health Information (PHI)** or personally identifiable medical data to this "
@@ -209,106 +198,201 @@ def server(input, output, session):
         ui.notification_show(message, close_button=True)
 
     # -----------------------------------------------------------------
-    # 1) Reactive: df() loads or returns the CGM data
-    #    Re-written to handle the radio button logic
+    # 1) Single UI that conditionally shows "Example" vs. "Upload"
     # -----------------------------------------------------------------
+    @render.ui
+    def import_data_ui():
+        """
+        Conditionally return UI elements for the 'Import Data' tab 
+        depending on whether user wants Example Data or Upload Data.
+        """
+        choice = input.data_source_choice()
+        if choice == "example":
+            # Just a card for resampling and max gap
+            return ui.card(
+                "Advanced Parameters",
+                ui.input_numeric("resample_interval", "Resampling Interval (minutes)", 5, min=1),
+                ui.input_numeric("max_gap", "Maximum Gap for Interpolation (minutes)", 45),
+            )
+        else:
+            # Show all the 'upload' controls
+            return ui.TagList(
+                ui.input_select(
+                    "sensor",
+                    "Data Format:",
+                    {
+                        "dexcom": "Dexcom",
+                        "freestyle libre 2": "FreeStyle Libre 2 or 3",
+                        "freestyle libre pro": "FreeStyle Libre Pro",
+                        "columns": "Custom CSV Format (Adhering to glucose360 Guidelines)",
+                    }
+                ),
+                ui.input_file(
+                    "data_import",
+                    "Import CGM Data (.csv or .zip file)",
+                    accept=[".zip", ".csv"],
+                    multiple=False
+                ),
+                ui.card(
+                    "Advanced Parameters",
+                    ui.input_numeric("resample_interval", "Resampling Interval (minutes)", 5, min=1),
+                    ui.input_numeric("max_gap", "Maximum Gap for Interpolation (minutes)", 45),
+                    ui.input_switch("use_id_template", "Use custom ID extraction?", value=False),
+                    # This will show/hide the text input for ID template
+                    ui.output_ui("id_template_ui"),
+
+                    ui.input_switch("use_split_data", "Upload a CSV to segment data intervals?", value=False),
+
+                    # Conditionally show the custom columns if user selected "columns"
+                    ui.output_ui("advanced_columns_ui"),
+                    # Conditionally show the split data file input
+                    ui.output_ui("split_data_ui"),
+                )
+            )
+
+    @render.ui
+    def id_template_ui():
+        """Show the ID template field if user toggles 'use_id_template', regardless of sensor."""
+        if input.use_id_template():
+            return ui.input_text("id_template", "Template for ID Retrieval (Regex/Format)")
+        return None
+
+    @render.ui
+    def advanced_columns_ui():
+        """
+        Show 'glucose_col' and 'time_col' only if sensor == 'columns'.
+        """
+        if input.sensor() == "columns":
+            return ui.TagList(
+                ui.input_text("glucose_col", "Name of Glucose Column"),
+                ui.input_text("time_col", "Name of Timestamp Column"),
+            )
+        return None
+
+    @render.ui
+    def split_data_ui():
+        """
+        Only show the file input for splitting data if 'use_split_data' is True.
+        """
+        if input.use_split_data():
+            return ui.input_file(
+                "split_data",
+                "Upload CSV to define intervals (optional)",
+                accept=[".csv"],
+                multiple=False
+            )
+        return None
+
+    # -----------------------------------------------------------------
+    # 2) Break the CGM data loading into separate reactives
+    # -----------------------------------------------------------------
+    @reactive.Calc
+    def example_data():
+        """
+        Loads and returns example data from a known file, e.g. 'trial_ids.zip'.
+        Uses the same resample_interval and max_gap as the user sets in the UI.
+        """
+        path = "trial_ids.zip"  # or wherever your example data is
+        sensor = "dexcom"
+
+        data = import_data(
+            path=path,
+            name=None,
+            sensor=sensor,
+            interval=input.resample_interval(),   # uses the user-defined numeric input
+            max_gap=input.max_gap(),             # uses the user-defined numeric input
+            output=notify
+        )
+        return data
+
+    @reactive.Calc
+    def user_uploaded_data():
+        """
+        Reactively loads user-uploaded data from .csv or .zip,
+        applying advanced parameters: custom columns, ID template, etc.
+        """
+        file_info = input.data_import()
+        if not file_info:
+            return pd.DataFrame()
+
+        path = file_info[0]["datapath"]
+        name = file_info[0]["name"].split(".")[0]
+
+        # Determine sensor or custom columns
+        if input.sensor() == "columns":
+            glucose_col = input.glucose_col() or None
+            time_col = input.time_col() or None
+            sensor = None  # We'll pass 'glucose' and 'time' explicitly
+        else:
+            # Dexcom/Libre/etc.
+            glucose_col = None
+            time_col = None
+            sensor = input.sensor()
+
+        # If user toggled ID template
+        id_template_val = input.id_template() if input.use_id_template() else None
+
+        data = import_data(
+            path=path,
+            name=name,
+            sensor=sensor,
+            id_template=id_template_val,
+            glucose=glucose_col,
+            time=time_col,
+            interval=input.resample_interval(),
+            max_gap=input.max_gap(),
+            output=notify
+        )
+        return data
+
+    @reactive.Calc
+    def segmented_data():
+        """
+        Takes either example_data() or user_uploaded_data() 
+        and optionally applies segment_data() if use_split_data is True.
+        """
+        # Which source are we using?
+        source = input.data_source_choice()
+        if source == "example":
+            base_df = example_data()
+        else:
+            base_df = user_uploaded_data()
+
+        if base_df.empty:
+            return base_df
+
+        # If user toggled the 'Split Data' switch and provided a CSV
+        if source == "upload" and input.use_split_data():
+            split_file = input.split_data()
+            if split_file:
+                seg_path = split_file[0]["datapath"]
+                return segment_data(seg_path, base_df)
+
+        # Else return unsegmented
+        return base_df
+
     @reactive.Calc
     def df():
         """
-        This reactive is responsible for loading CGM data, optionally from an example file.
-        Then it optionally segments the data if a 'split_data' CSV is uploaded.
-        Finally it auto-generates curated events (episodes/excursions) to populate events_ref.
+        The final CGM data for the rest of the app to use.
+        Also auto-creates curated events (e.g. hypo/hyper episodes) and stores them in events_ref.
         """
-        data_source = input.data_source_choice()  # "example" or "upload"
-        
-        # If user chooses "example"
-        if data_source == "example":
-            # Example data path from your repository:
-            path = "trial_ids.zip"  # adjust as needed
-            name = None
-            sensor = "dexcom"  # or whatever default you want
-            data = import_data(
-                path=path, 
-                name=name,
-                sensor=sensor,
-                interval=input.resample_interval(), 
-                max_gap=input.max_gap(),
-                output=notify
-            )
+        data = segmented_data()
+        if data.empty:
+            return pd.DataFrame()
 
-        else:
-            # User chooses "upload"
-            data_file: list[FileInfo] | None = input.data_import()
-            if not data_file:
-                return pd.DataFrame()  # no file yet
-            path = data_file[0]["datapath"]
-            name = data_file[0]["name"].split(".")[0]
-            sensor = input.sensor()
-            
-            # By default, None unless the user typed custom columns
-            if input.sensor() == "columns":
-                glucose_col = input.glucose_col() if input.glucose_col() else None
-                time_col = input.time_col() if input.time_col() else None
-                id_template = input.id_template() if input.use_id_template() and input.id_template() else None
-            else:
-                glucose_col = None
-                time_col = None
-                id_template = None
-            data = import_data(
-                path=path, 
-                name=name,
-                sensor=sensor,
-                id_template=id_template,
-                glucose=glucose_col,
-                time=time_col,
-                interval=input.resample_interval(), 
-                max_gap=input.max_gap(),
-                output=notify
-            )
-
-        # If user uploaded a CSV to split data
-
-        if input.data_source_choice() == "upload" and input.use_split_data():
-            split_file = input.split_data()
-            if split_file:
-                data = segment_data(split_file[0]["datapath"], data)
-
-        # Generate curated events automatically (hypo/hyper episodes, excursions)
+        # Generate curated events automatically
         auto_events = get_curated_events(data).reset_index(drop=True)
         events_ref.set(auto_events)
         filtered_events_ref.set(auto_events)
 
         return data
 
-    @render.ui
-    def split_data_section():
-        """
-        Show the 'Split Data' input only if the user selected 'Upload Your Own Data' and use_split_data is True.
-        """
-        if input.data_source_choice() == "upload" and input.use_split_data():
-            return ui.input_file(
-                "split_data", 
-                "Split Data", 
-                accept=[".csv"], 
-                multiple=False
-            )
-        return None
-    
-    @render.ui
-    def advanced_parameters_toggles():
-        """
-        Show ID template and split data toggles only if data_source_choice is "upload"
-        """
-        if input.data_source_choice() == "upload":
-            return ui.TagList(
-                ui.input_switch("use_id_template", "Use custom ID?", value=False),
-                ui.input_switch("use_split_data", "Would you like to split each participant's CGM data into custom date/time intervals by uploading a separate CSV file?", value=False),
-            )
-        return None
-    
     # -----------------------------------------------------------------
-    # 2) Bulk Import of Additional Events
+    # 3) Bulk Import of Additional Events
     # -----------------------------------------------------------------
+
+
     @reactive.Effect
     @reactive.event(input.event_import)
     def bulk_import_events():
@@ -332,7 +416,7 @@ def server(input, output, session):
             filtered_events_ref.set(combined)
 
     # -----------------------------------------------------------------
-    # 3) Add Single Event
+    # 4) Add Single Event
     # -----------------------------------------------------------------
     @reactive.Effect
     @reactive.event(input.add_event_button)
@@ -353,7 +437,7 @@ def server(input, output, session):
         filtered_events_ref.set(updated)
 
     # -----------------------------------------------------------------
-    # 4) Features Tab
+    # 5) Features Tab
     # -----------------------------------------------------------------
     @render.data_frame
     def features_table():
@@ -361,7 +445,7 @@ def server(input, output, session):
         Show computed CGM features for each patient in the dataset.
         """
         if df().empty:
-            raise Exception("No CGM data loaded. Please upload CGM data above.")
+            raise Exception("No CGM data loaded. Please upload or select example data.")
         feats = create_features(df())
         return render.DataGrid(feats.reset_index(names=["Patient"]))
 
@@ -377,7 +461,7 @@ def server(input, output, session):
         Show computed event-based features for each patient in the dataset.
         """
         if df().empty:
-            raise Exception("No CGM data loaded. Please upload CGM data above.")
+            raise Exception("No CGM data loaded. Please upload or select example data.")
         feats = create_event_features(df(), events_ref.get())
         return render.DataGrid(feats.reset_index(names=["Patient"]))
 
@@ -388,7 +472,7 @@ def server(input, output, session):
         yield create_event_features(df(), events_ref.get()).reset_index(names=["Patient"]).to_csv(index=False)
 
     # -----------------------------------------------------------------
-    # 5) Plots Tab
+    # 6) Plots Tab
     # -----------------------------------------------------------------
 
     @render.ui
@@ -405,71 +489,7 @@ def server(input, output, session):
             data.index.unique().tolist()
         )
 
-    @render.ui
-    def sensor_select():
-        """
-        Only appear if data_source_choice == 'upload'
-        """
-        if input.data_source_choice() == "upload":
-            return ui.input_select(
-                "sensor", 
-                "Data Format:", 
-                {
-                    "dexcom": "Dexcom",
-                    "freestyle libre 2": "FreeStyle Libre 2 or 3",
-                    "freestyle libre pro": "FreeStyle Libre Pro",
-                    "columns": "Custom CSV Format (Adhering to glucose360 Guidelines)",
-                }
-            )
-        return None
 
-    @render.ui
-    def upload_data_button():
-        """
-        Only appear if data_source_choice == 'upload'
-        """
-        if input.data_source_choice() == "upload":
-            return ui.input_file(
-                "data_import", 
-                "Import CGM Data (.csv or .zip file)", 
-                accept=[".zip", ".csv"], 
-                multiple=False
-            )
-        return None
-
-    @render.ui
-    def advanced_custom_data_options():
-        """
-        Additional text fields for custom columns if data_source_choice == 'upload'.
-        Only show glucose and timestamp column inputs when sensor type is "columns".
-        Only show ID template input when use_id_template is True.
-        """
-        if input.data_source_choice() == "upload":
-            if input.sensor() == "columns":
-                return ui.TagList(
-                    ui.input_text("glucose_col", "Name of Glucose Column"),
-                    ui.input_text("time_col", "Name of Timestamp Column"),
-                    ui.input_text("id_template", "Template for ID Retrieval (Regex or Format)") if input.use_id_template() else None,
-                )
-            else:
-                if input.use_id_template():
-                    return ui.TagList(
-                        ui.input_text(
-                            "id_template", 
-                            tags.span(
-                                "Template for ID Retrieval (Regex or Format) ",
-                                tags.span(
-                                    "ℹ️",
-                                    style="font-size: 16px; color: #0d6efd; cursor: pointer;",
-                                    title=(
-                                        "Optional: ."
-                                    )
-                                )
-                            )
-                        ),
-                    )
-                else:
-                    return None
         return None
     
     @reactive.Effect
@@ -673,7 +693,7 @@ def server(input, output, session):
         yield report_html.encode("utf-8")
 
     # -----------------------------------------------------------------
-    # 6) Events Tab (view/edit)
+    # 7) Events Tab (view/edit)
     # -----------------------------------------------------------------
 
     @render.ui
@@ -869,6 +889,12 @@ def server(input, output, session):
 
         # Use your event_plot function
         return event_plot(df(), patient, single_event, all_events_same_patient, app=True)
+
+    # -----------------------------------------------------------------
+    # Navigation: sample data tab
+    # -----------------------------------------------------------------
+
+
 
 # ---------------------------------------------------------------------
 # Create the Shiny app
