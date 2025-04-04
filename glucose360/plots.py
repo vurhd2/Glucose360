@@ -103,7 +103,7 @@ def daily_plot(
           title=dict(font=dict(size=35))
       )
       fig.update_yaxes(
-          title=dict(text="Glucose Value (mg/dL)", font=dict(size=35)),
+          title=dict(text="Glucose Value (mg/dL)"),
           tickfont=dict(size=20),
           row=idx,
           col=1
@@ -176,6 +176,8 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
     :type event: 'pandas.Series'
     :param events: a DataFrame containing any extra events to be marked within the event plot, defaults to None
     :type events: 'pandas.DataFrame', optional
+    :param save: boolean indicating whether to save the plot as a file, defaults to False
+    :type save: bool, optional
     :param app: boolean indicating whether to return the Plotly figure instead of rendering it (used mainly within the web application), defaults to False
     :type app: bool, optional
     :return: None if app is False, otherwise the Plotly figure
@@ -287,10 +289,12 @@ def weekly_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 1000,
       last_end = last_start + pd.Timedelta(weeks=1)
       fig.update_xaxes(range=[first_start - offset_before, first_end + offset_after], row=1, col=1)
       fig.update_xaxes(range=[last_start - offset_before, last_end + offset_after], row=len(weekly_dfs), col=1)
-   fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10], tickfont_size=20, titlefont_size=15)
-   fig.update_xaxes(tickformat="%B %d, %Y <br> (%a)", tickfont_size=15, titlefont_size=30)
+   fig.update_yaxes(range=[min(np.min(data[GLUCOSE]), 60) - 10, max(np.max(data[GLUCOSE]), 180) + 10], 
+                   tickfont=dict(size=30), 
+                   title=dict(text="Glucose Value<br>(mg/dL)", font=dict(size=35)))
+   fig.update_xaxes(tickformat="%B %d, %Y <br> (%a)", tickfont=dict(size=30), title=dict(font=dict(size=35)))
 
-   fig.update_layout(title=f"Weekly Plot for {id}", titlefont_size=30, height=height, showlegend=False)
+   fig.update_layout(title=dict(text=f"Weekly Plot for {id}", font=dict(size=30)), height=height, showlegend=False)
 
    if save: 
       path = os.path.join(save, f"{id}_weekly_plot")
@@ -430,9 +434,10 @@ def AGP_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 600, app
     fig.add_hline(y=70, line_color="lime")
     fig.add_hline(y=140, line_color="lime")
     fig.add_hline(y=180, line_color="green")
-    fig.update_layout(title={"text": f"AGP Plot for {id}", "font": {"size":30}}, height=height, yaxis_range = [35,405], legend=dict(font=dict(size=30)))
-    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time", tickfont_size=20, titlefont_size=25) # shows only the times for the x-axis
-    fig.update_yaxes(title_text="Glucose Value (mg/dL)", tickfont_size=20, titlefont_size=25)
+    fig.update_layout(title={"text": f"AGP Plot for {id}", "font": {"size":30}}, height=height, yaxis_range = [35,405], 
+                     legend=dict(font=dict(size=40), itemsizing='constant'))
+    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time", tickfont_size=30, title_font_size=40)
+    fig.update_yaxes(title_text="Glucose Value<br>(mg/dL)", tickfont_size=30, title_font_size=35)
 
     if app: return fig
     fig.show()
@@ -468,20 +473,30 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
                        "> 250 mg/dL": "rgba(241,136,64,255)"}
    
    for key, value in TIR.items():
-      fig.add_trace(go.Bar(name=key, x=["TIR"], y=[value], marker=dict(color=COLORS[key]), text=[round(value, 2)], textposition="inside"), row=1, col=2)
-   fig.update_layout(barmode='stack', height=600, font=dict(size=20))
+      fig.add_trace(go.Bar(name=key, x=["TIR"], y=[value], 
+                          marker=dict(color=COLORS[key]), 
+                          text=[round(value, 2)], 
+                          textposition="inside",
+                          textfont=dict(size=35)), row=1, col=2)
+   fig.update_layout(barmode='stack', height=800, font=dict(size=35),
+                    legend=dict(font=dict(size=35)))
+   
+   fig.update_xaxes(title_text="Time in Range", title_font=dict(size=35), tickfont=dict(size=35), row=1, col=2)
+   fig.update_yaxes(title_text="Percentage (%)", title_font=dict(size=35), tickfont=dict(size=35), row=1, col=2)
    
    ave_glucose = mean(patient_data)
    gmi = GMI(patient_data)
    cv = CV(patient_data)
 
    days = patient_data[TIME].dt.date
-   table_body = [["Test Patient ID:", f"{len(days.unique())} Days:", "Average Glucose (mg/dL):", "Glucose Management Indicator:", "Glucose Variability:"], 
+   table_body = [["ID:", f"{len(days.unique())} Days:", "Average Glucose (mg/dL):", "Glucose Management Indicator:", "Glucose Variability:"], 
                  [id, f"{days.iloc[0]} to {days.iloc[-1]}", str(round(ave_glucose, 2)), str(round(gmi, 2)), str(round(cv, 2))]]
-   fig.add_trace(go.Table(cells=dict(values=table_body,align=['left', 'center'],font=dict(size=25),height=50)), row=1, col=1)
+   fig.add_trace(go.Table(cells=dict(values=table_body,align=['left', 'center'],font=dict(size=35),height=100)), row=1, col=1)
    
-   agp = AGP_plot(df, id, app=True); 
-   weekly = weekly_plot(df, id, height=500, app=True); 
+   agp = AGP_plot(df, id, app=True)
+   weekly = weekly_plot(df, id, height=1000, app=True)
+   weekly.update_layout(margin=dict(l=150))
+   weekly.update_yaxes(title=dict(text="Glucose Value<br>(mg/dL)", font=dict(size=35)))
 
    header_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
    agp_html = agp.to_html(full_html=False, include_plotlyjs=False)
@@ -494,7 +509,7 @@ def AGP_report(df: pd.DataFrame, id: str, path: str = None):
       <title>AGP Report for {id}</title>
    </head>
    <body>
-      <h1> AGP Report: Continuous Glucose Monitoring </h1>
+      <h1 style="font-size: 48px; text-align: center;"> AGP Report: Continuous Glucose Monitoring </h1>
       {header_html}
       {agp_html}
       {weekly_html}
