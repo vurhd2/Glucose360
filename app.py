@@ -254,7 +254,38 @@ def server(input, output, session):
     def id_template_ui():
         """Show the ID template field if user toggles 'use_id_template', regardless of sensor."""
         if input.use_id_template():
-            return ui.input_text("id_template", "Template for ID Retrieval (Regex/Format)")
+            return ui.TagList(
+                ui.markdown("""
+### ID Template Guide
+
+The ID template allows you to automatically format dataset/patient identifiers based on either:
+1. The filename
+2. Three dataset entries: first name, last name, and pre-assigned identifier
+
+#### Based on Filename
+If you want to parse the filename for identification, use a regex with:
+- A matched group called `id`
+- Optionally, another matched group called `section`
+
+This will create patient IDs by combining the parsed `id` and `section` groups (if present).
+
+> **Tip:** If you're new to regex, check out tutorials like [RegexOne](https://regexone.com/).
+
+#### Based on Dataset Entries
+1. Take one of your datasets as an example
+2. Write out your desired identifier format
+3. Replace:
+   - First name with `{first}`
+   - Last name with `{last}`
+   - Pre-assigned identifier with `{patient_identifier}`
+
+**Examples:**
+- If a dataset has first name "John", last name "Doe", and identifier "1":
+  - `"{first} {last} {patient_identifier}"` → "John Doe 1"
+  - `"{patient_identifier}: {last}, {first}"` → "1: Doe, John"
+"""),
+                ui.input_text("id_template", "Template for ID Retrieval (Regex/Format)")
+            )
         return None
 
     @render.ui
