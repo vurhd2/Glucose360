@@ -348,8 +348,19 @@ def spaghetti_plot(df: pd.DataFrame, id: str, chunk_day: bool = False, save: str
     data.sort_values(by=[TIME], inplace=True)
 
     fig = px.line(data, x="Time", y=GLUCOSE, color="Day", title=f"Spaghetti Plot for {id}", height=height, facet_col="Day Chunking" if chunk_day else None)
-    fig.update_xaxes(tickformat="%H:%M:%S", title_text="Time", tickfont_size=20, titlefont_size=35) # shows only the times for the x-axis
-    fig.update_yaxes(title_text="Glucose Value (mg/dL)", tickfont_size=20, titlefont_size=35, row=1, col=1)
+    fig.update_xaxes(
+        tickformat="%H:%M:%S",
+        title_text="Time",
+        tickfont_size=20,
+        title=dict(font=dict(size=35))
+    )
+    fig.update_yaxes(
+        title_text="Glucose Value (mg/dL)",
+        tickfont_size=20,
+        title=dict(font=dict(size=35)),
+        row=1,
+        col=1
+    )
     fig.update_annotations(font_size=35)
     fig.update_layout(title=dict(font=dict(size=40)), legend=dict(font=dict(size=30)))
 

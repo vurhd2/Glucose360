@@ -574,7 +574,7 @@ This will create patient IDs by combining the parsed `id` and `section` groups (
             return None
 
         table = pd.DataFrame(subset[TYPE])
-        return render.DataGrid(table, row_selection_mode="multiple")
+        return render.DataGrid(table, selection_mode="rows")
 
     @reactive.Effect
     @reactive.event(input.daily_filters_selected_rows)
@@ -753,7 +753,7 @@ This will create patient IDs by combining the parsed `id` and `section` groups (
             return None
 
         table = pd.DataFrame(subset[TYPE])
-        return render.DataGrid(table, row_selection_mode="multiple")
+        return render.DataGrid(table, selection_mode="rows")
 
     @reactive.Effect
     @reactive.event(input.select_patient_event, input.event_filters_selected_rows, input.edit_event)
@@ -793,7 +793,7 @@ This will create patient IDs by combining the parsed `id` and `section` groups (
 
         # Convert TIME to string so it looks nice in the grid
         events[TIME] = events[TIME].astype(str)
-        return render.DataGrid(events.drop(columns=[ID]).reset_index(drop=True), row_selection_mode="multiple")
+        return render.DataGrid(events.drop(columns=[ID]).reset_index(drop=True), selection_mode="rows")
 
     @render.ui
     def ui_event_row():
