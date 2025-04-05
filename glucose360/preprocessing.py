@@ -467,7 +467,7 @@ def _resample_data(df: pd.DataFrame, minutes: int = 5, max_gap: int = 45) -> pd.
     resampled_df = df.sort_values(by=[TIME])
     resampled_df = resampled_df.set_index(TIME)
 
-    interval = str(minutes) + "T"
+    interval = str(minutes) + "min"
     # generate the times that match the frequency
     resampled_df = resampled_df.asfreq(interval)
     # add in the original points that don't match the frequency (just for linear time-based interpolation)
