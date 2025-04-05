@@ -566,8 +566,9 @@ def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float
    averages["MA_Long"] = averages[GLUCOSE].rolling(window=long_ma, min_periods=1).mean()
 
    # fill in leading NaNs due to moving average calculation
-   averages["MA_Short"].iloc[:short_ma-1] = averages["MA_Short"].iloc[short_ma-1]
-   averages["MA_Long"].iloc[:long_ma-1] = averages["MA_Long"].iloc[long_ma-1]
+   averages.loc[:(short_ma - 2), "MA_Short"] = averages.at[short_ma - 1, "MA_Short"]
+   averages.loc[:(long_ma - 2),  "MA_Long"]  = averages.at[long_ma - 1,  "MA_Long"]
+
    averages["DELTA_SL"] = averages["MA_Short"] - averages["MA_Long"]
    
    # get crossing points

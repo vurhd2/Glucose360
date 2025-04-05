@@ -431,9 +431,12 @@ def preprocess_data(
    >>> # 'df' is a Pandas DataFrame already containing your CGM data, with columns for glucose values, timestamps, and identification
    >>> preprocessed_df = preprocess_data(df)
    """
+   # Create a copy of the DataFrame to avoid SettingWithCopyWarning
+   df = df.copy()
+   
    df = df.dropna(subset=[GLUCOSE])
-   df = df.replace("Low", LOW)
-   df = df.replace("High", HIGH)
+   df.loc[:,'Glucose'] = df['Glucose'].replace("Low", LOW)
+   df.loc[:,'Glucose'] = df['Glucose'].replace("High", HIGH)
    df.reset_index(drop=True, inplace=True)
 
    df[TIME] = pd.to_datetime(df[TIME])
@@ -506,9 +509,9 @@ def _interpolate_data(df: pd.DataFrame, max_gap: int) -> pd.DataFrame:
     s = s.ne(s.shift()).cumsum()
 
     m = df.groupby([s, df[GLUCOSE].isnull()])[GLUCOSE].transform('size').where(df[GLUCOSE].isnull())
-    interpolated_df = df.interpolate(method="time", limit_area="inside").mask(m >= int(max_gap / interval))
+    df['Glucose'] = df['Glucose'].interpolate(method="time", limit_area="inside").mask(m >= int(max_gap / interval))
 
-    return interpolated_df
+    return df
 
 def _chunk_time(df: pd.DataFrame) -> pd.DataFrame:
     """Adds a new column to the given DataFrame specifying whether the values occur during a waking or sleeping period
