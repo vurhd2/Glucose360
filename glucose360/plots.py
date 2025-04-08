@@ -191,13 +191,13 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
 
    data["Day"] = data[TIME].dt.date
    subplot_figs = [go.Scatter(x=dataset[TIME].apply(lambda dt: dt.isoformat()),y=dataset[GLUCOSE],mode='lines+markers', name=str(day)) for day, dataset in data.groupby("Day")]
-   fig = go.Figure(data=subplot_figs, layout=go.Layout(title=f"Event Plot for {id}", titlefont_size=40, legend=dict(font=dict(size=20))))
+   fig = go.Figure(data=subplot_figs, layout=go.Layout(title=dict(text=f"Event Plot for {id}", font=dict(size=40)), legend=dict(font=dict(size=20))))
 
    event_data = events[events[ID] == id] if events is not None else pd.DataFrame()
    if not event_data.empty: create_event_lines(fig, event_data)
 
-   fig.update_xaxes(type="date", range=[before, after], tickfont_size=20, titlefont_size=35)
-   fig.update_yaxes(title_text="Glucose Value (mg/dL)", range=[85, 170], tickfont_size=20, titlefont_size=35)
+   fig.update_xaxes(type="date", range=[before, after], tickfont=dict(size=20), title=dict(font=dict(size=35)))
+   fig.update_yaxes(title_text="Glucose Value (mg/dL)", range=[85, 170], tickfont=dict(size=20), title=dict(font=dict(size=35)))
 
    if save: 
       path = os.path.join(save, f"{id}_event_plot")

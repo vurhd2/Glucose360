@@ -23,7 +23,7 @@ from glucose360.features import (
     create_features
 )
 from glucose360.plots import (
-    daily_plot, weekly_plot, spaghetti_plot, AGP_plot, AGP_report
+    daily_plot, weekly_plot, spaghetti_plot, AGP_plot, AGP_report,event_plot
 )
 
 # ---------------------------------------------------------------------
