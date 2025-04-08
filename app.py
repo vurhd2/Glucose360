@@ -168,6 +168,11 @@ app_ui = ui.page_fluid(
         ui.nav_panel(
             "Sample Data Formats",
             ui.h2("Examples of Common CGM Data Formats"),
+            ui.markdown(
+                "**File Upload Options**: You can upload either individual CSV files or a ZIP file containing multiple CSV files. "
+                "When uploading a ZIP file, each CSV inside will be processed according to the ID. "
+                "Each file within the ZIP file should use the same format. "
+            ),
             ui.card(
                 ui.h3("Dexcom CSV Example"),
                 tags.img(src="dexcom_sample.png", style="max-width:100%; height:auto;")
