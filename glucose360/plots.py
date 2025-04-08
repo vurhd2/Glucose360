@@ -95,7 +95,7 @@ def daily_plot(
    num_events = 0
 
    for idx, (day, dataset) in enumerate(data.groupby("Day"), start=1):
-      fig.add_trace(go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers',name=str(day), showlegend=False), row=idx, col=1)
+      fig.add_trace(go.Scatter(x=dataset[TIME].apply(lambda dt: dt.isoformat()),y=dataset[GLUCOSE],mode='lines+markers',name=str(day), showlegend=False), row=idx, col=1)
       fig.update_xaxes(
           range=[pd.Timestamp(day) - offset, pd.Timestamp(day) + pd.Timedelta(days=1) + offset],
           row=idx, col=1,
@@ -190,7 +190,7 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
    after = event[TIME] + pd.Timedelta(minutes=event[AFTER])
 
    data["Day"] = data[TIME].dt.date
-   subplot_figs = [go.Scatter(x=dataset[TIME],y=dataset[GLUCOSE],mode='lines+markers', name=str(day)) for day, dataset in data.groupby("Day")]
+   subplot_figs = [go.Scatter(x=dataset[TIME].apply(lambda dt: dt.isoformat()),y=dataset[GLUCOSE],mode='lines+markers', name=str(day)) for day, dataset in data.groupby("Day")]
    fig = go.Figure(data=subplot_figs, layout=go.Layout(title=f"Event Plot for {id}", titlefont_size=40, legend=dict(font=dict(size=20))))
 
    event_data = events[events[ID] == id] if events is not None else pd.DataFrame()
@@ -273,7 +273,7 @@ def weekly_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 1000,
       week = weekly_dfs[week_index].reset_index()
       fig.add_trace(
          go.Scatter(
-               x=week[TIME],
+               x=week[TIME].apply(lambda dt: dt.isoformat()),
                y=week[GLUCOSE],
                mode='lines+markers',
          ), row=(week_index+1), col=1
@@ -345,6 +345,7 @@ def spaghetti_plot(df: pd.DataFrame, id: str, chunk_day: bool = False, save: str
     data["Day"] = data[TIME].dt.date
     times = data[TIME] - data[TIME].dt.normalize()
     data["Time"] = (pd.to_datetime(["1/1/1970" for i in range(data[TIME].size)]) + times)
+    data["Time"] = data["Time"].apply(lambda dt: dt.isoformat())
     data.sort_values(by=[TIME], inplace=True)
 
     fig = px.line(data, x="Time", y=GLUCOSE, color="Day", title=f"Spaghetti Plot for {id}", height=height, facet_col="Day Chunking" if chunk_day else None)
@@ -434,6 +435,7 @@ def AGP_plot(df: pd.DataFrame, id: str, save: str = None, height: int = 600, app
       agp_data = pd.concat([agp_data, pd.DataFrame.from_records([metrics])])
 
     agp_data.sort_values(by=["Time"], inplace=True)
+    agp_data["Time"] = agp_data["Time"].apply(lambda dt: dt.isoformat())
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(name="5th", x=agp_data["Time"], y=agp_data["5th"], line=dict(color="#869FCE")))

@@ -660,9 +660,7 @@ This will create patient IDs by combining the parsed `id` and `section` groups (
         plot_type = input.select_plot()
         height = input.plot_height_slider()
 
-        # We can slice the data for the chosen patient
-        # (Your code references multi-index data, so adapt if needed)
-        patient_data = data.loc[patient]
+
 
         # For daily plots, we might pass in daily_events_ref to show vertical lines/tables
         highlight_events = None
