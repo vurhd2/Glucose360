@@ -24,8 +24,8 @@ def import_events(
    name: str = None,
    day_col: str = "Day",
    time_col: str = "Time",
-   before: int = 60,
-   after: int = 60,
+   before: int = 30,
+   after: int = 180,
    type: str = "imported event"
 ) -> pd.DataFrame:
    """Bulk imports events from standalone .csv files or from those within a given directory or .zip file
@@ -38,9 +38,9 @@ def import_events(
    :type day_col: str, optional
    :param time_col: the name of the column specifying what time during the day the event occurred, defaults to 'Time'
    :type time_col: str, optional
-   :param before: the amount of minutes to also look at before the event timestamp, defaults to 60
+   :param before: the amount of minutes to also look at before the event timestamp, defaults to 30
    :type before: int, optional
-   :param after: the amount of minutes to also look at after the event timestamp, defaults to 60
+   :param after: the amount of minutes to also look at after the event timestamp, defaults to 180
    :type after: int, optional
    :param type: the type of event to classify all the imported events as, defaults to 'imported event'
    :type type: str, optional
@@ -80,8 +80,8 @@ def import_events_directory(
    id: str,
    day_col: str = "Day",
    time_col: str = "Time",
-   before: int = 60,
-   after: int = 60,
+   before: int = 30,
+   after: int = 180,
    type: str = "imported event"
 ) -> pd.DataFrame:
     """Bulk imports events from .csv files within a given directory
@@ -94,9 +94,9 @@ def import_events_directory(
    :type day_col: str, optional
    :param time_col: the name of the column specifying what time during the day the event occurred, defaults to 'Time'
    :type time_col: str, optional
-   :param before: the amount of minutes to also look at before the event timestamp, defaults to 60
+   :param before: the amount of minutes to also look at before the event timestamp, defaults to 30
    :type before: int, optional
-   :param after: the amount of minutes to also look at after the event timestamp, defaults to 60
+   :param after: the amount of minutes to also look at after the event timestamp, defaults to 180
    :type after: int, optional
    :param type: the type of event to classify all the imported events as, defaults to 'imported event'
    :type type: str, optional
@@ -115,8 +115,8 @@ def import_events_csv(
    id: str,
    day_col: str = "Day",
    time_col: str = "Time",
-   before: int = 60,
-   after: int = 60,
+   before: int = 30,
+   after: int = 180,
    type: str = "imported event"
 ) -> pd.DataFrame:
    """Bulk imports events from a single .csv file
@@ -129,9 +129,9 @@ def import_events_csv(
    :type day_col: str, optional
    :param time_col: the name of the column specifying what time during the day the event occurred, defaults to 'Time'
    :type time_col: str, optional
-   :param before: the amount of minutes to also look at before the event timestamp, defaults to 60
+   :param before: the amount of minutes to also look at before the event timestamp, defaults to 30
    :type before: int, optional
-   :param after: the amount of minutes to also look at after the event timestamp, defaults to 60
+   :param after: the amount of minutes to also look at after the event timestamp, defaults to 180
    :type after: int, optional
    :param type: the type of event to classify all the imported events as, defaults to 'imported event'
    :type type: str, optional
