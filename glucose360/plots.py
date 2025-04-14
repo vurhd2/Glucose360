@@ -185,6 +185,7 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
     """
    if event[ID] != id: raise Exception("Given event does not match the 'id' given.")
    data = df.loc[id].copy()
+   event = event.copy()
    event[TIME] = pd.to_datetime(event[TIME])
    before = event[TIME] - pd.Timedelta(minutes=event[BEFORE])
    after = event[TIME] + pd.Timedelta(minutes=event[AFTER])
