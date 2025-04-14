@@ -198,7 +198,7 @@ def event_plot(df: pd.DataFrame, id: str, event: pd.Series, events: pd.DataFrame
    if not event_data.empty: create_event_lines(fig, event_data)
 
    fig.update_xaxes(type="date", range=[before, after], tickfont=dict(size=20), title=dict(font=dict(size=35)))
-   fig.update_yaxes(title_text="Glucose Value (mg/dL)", range=[85, 170], tickfont=dict(size=20), title=dict(font=dict(size=35)))
+   fig.update_yaxes(title_text="Glucose Value (mg/dL)", tickfont=dict(size=20), title=dict(font=dict(size=35)))
 
    if save: 
       path = os.path.join(save, f"{id}_event_plot")
