@@ -564,7 +564,7 @@ def event_metrics(
    final = datetime + pd.Timedelta(event[AFTER], "m")
 
    patient_data = df.loc[id]
-   data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy()
+   data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy().reset_index(drop=True)
 
    metrics = pd.Series()
    metrics["Baseline"] = baseline(data)
