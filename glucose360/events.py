@@ -612,8 +612,8 @@ def create_event_features(
    event_features = {}
    for id in df.index.unique():
       sub_features = {}
-      for type, sub_events in events[events[ID] == id].groupby(TYPE):
-         sub_features.update(create_event_features_helper(df.loc[id], sub_events, type))
+      for event_type, sub_events in events[events[ID] == id].groupby(TYPE):
+         sub_features.update(create_event_features_helper(df.loc[id], sub_events, event_type))
       event_features[id] = sub_features
 
    return pd.DataFrame(event_features).T
@@ -621,7 +621,7 @@ def create_event_features(
 def create_event_features_helper(
    df: pd.DataFrame,
    sub_events: pd.DataFrame,
-   type: str,     
+   event_type: str,
 ) -> dict[str, float]:
    """Calculates aggregate event-based metrics for a single patient and type of event. Helper method for 'create_event_features()'.
 
@@ -629,32 +629,32 @@ def create_event_features_helper(
    :type df: 'pandas.DataFrame'
    :param sub_events: Pandas DataFrame containing events of only one type solely for the patient whose CGM trace is also given
    :type sub_events: 'pandas.DataFrame'
-   :param type: the type of event that 'sub_events' contains
-   :type type: str
+   :param event_type: the type of event that 'sub_events' contains
+   :type event_type: str
    :return: a dictionary with str-type keys that refer to the name of the calculated features and float-type values
    :rtype: dict[str, float]
    """
    
    features = {
-      f"Mean {type} Duration": [],
-      f"Mean Glucose During {type}s": [],
-      f"Mean Upwards Slope of {type}s (mg/dL per min)": [],
-      f"Mean Downwards Slope of {type}s (mg/dL per min)": [],
-      f"Mean Minimum Glucose of {type}s": [],
-      f"Mean Maximum Glucose of {type}s": [],
-      f"Mean Amplitude of {type}s": [],
-      f"Mean iAUC of {type}s": []
+      f"Mean {event_type} Duration": [],
+      f"Mean Glucose During {event_type}s": [],
+      f"Mean Upwards Slope of {event_type}s (mg/dL per min)": [],
+      f"Mean Downwards Slope of {event_type}s (mg/dL per min)": [],
+      f"Mean Minimum Glucose of {event_type}s": [],
+      f"Mean Maximum Glucose of {event_type}s": [],
+      f"Mean Amplitude of {event_type}s": [],
+      f"Mean iAUC of {event_type}s": []
    }
    
    for _, event in sub_events.iterrows():
       event_data = retrieve_event_data(df, event)
 
       duration = event[AFTER] - event[BEFORE]
-      features[f"Mean {type} Duration"].append(duration)
+      features[f"Mean {event_type} Duration"].append(duration)
 
-      features[f"Mean Glucose During {type}s"].append(event_data[GLUCOSE].mean())
-      features[f"Mean Minimum Glucose of {type}s"] = nadir(event_data)
-      features[f"Mean Maximum Glucose of {type}s"] = peak(event_data)
+      features[f"Mean Glucose During {event_type}s"].append(event_data[GLUCOSE].mean())
+      features[f"Mean Minimum Glucose of {event_type}s"].append(nadir(event_data))
+      features[f"Mean Maximum Glucose of {event_type}s"].append(peak(event_data))
 
       event_time = event[TIME]
       closest_idx = (event_data[TIME] - event_time).abs().idxmin()
@@ -663,11 +663,11 @@ def create_event_features_helper(
       peak_glucose = peak(event_data)
       peak_time = event_data.loc[event_data[GLUCOSE].idxmax(), TIME]
       amplitude = peak_glucose - event_glucose
-      features[f"Mean Amplitude of {type}s"].append(abs(amplitude))
+      features[f"Mean Amplitude of {event_type}s"].append(abs(amplitude))
 
       time_diff_to_peak = (peak_time - event_time).total_seconds() / 60.0
       slope_to_peak = (peak_glucose - event_glucose) / time_diff_to_peak if time_diff_to_peak != 0 else np.nan
-      features[f"Mean Upwards Slope of {type}s (mg/dL per min)"].append(slope_to_peak)
+      features[f"Mean Upwards Slope of {event_type}s (mg/dL per min)"].append(slope_to_peak)
 
       end_time = event_data[TIME].iloc[-1]
       end_glucose = event_data[GLUCOSE].iloc[-1]
@@ -675,8 +675,8 @@ def create_event_features_helper(
       slope_peak_to_end = (end_glucose - peak_glucose) / time_diff_peak_to_end if time_diff_peak_to_end != 0 else np.nan
       features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(slope_peak_to_end)
 
-      features[f"Mean iAUC of {type}s"].append(iAUC(event_data, event_glucose))
+      features[f"Mean iAUC of {event_type}s"].append(iAUC(event_data, event_glucose))
 
    features = {k: np.mean(v) for k, v in features.items()}
-   features[f"Mean # of {type}s per day"] = sub_events.shape[0] / len(df[TIME].dt.date.unique())
+   features[f"Mean # of {event_type}s per day"] = sub_events.shape[0] / len(df[TIME].dt.date.unique())
    return features
