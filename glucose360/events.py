@@ -390,7 +390,7 @@ def retrieve_event_data(
          final = datetime + pd.Timedelta(row[AFTER], "m")
 
          patient_data = df.loc[id]
-         data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy()
+         data = patient_data[(patient_data[TIME] >= initial) & (patient_data[TIME] <= final)].copy().reset_index(drop=True)
 
          data[ID] = id
          data[DESCRIPTION] = row[DESCRIPTION]
@@ -649,7 +649,7 @@ def create_event_features_helper(
    for _, event in sub_events.iterrows():
       event_data = retrieve_event_data(df, event)
 
-      duration = event[AFTER] - event[BEFORE]
+      duration = event[AFTER] + event[BEFORE]
       features[f"Mean {event_type} Duration"].append(duration)
 
       features[f"Mean Glucose During {event_type}s"].append(event_data[GLUCOSE].mean())
@@ -673,7 +673,7 @@ def create_event_features_helper(
       end_glucose = event_data[GLUCOSE].iloc[-1]
       time_diff_peak_to_end = (end_time - peak_time).total_seconds() / 60.0
       slope_peak_to_end = (end_glucose - peak_glucose) / time_diff_peak_to_end if time_diff_peak_to_end != 0 else np.nan
-      features[f"Mean Downwards Slope of {type}s (mg/dL per min)"].append(slope_peak_to_end)
+      features[f"Mean Downwards Slope of {event_type}s (mg/dL per min)"].append(slope_peak_to_end)
 
       features[f"Mean iAUC of {event_type}s"].append(iAUC(event_data, event_glucose))
 
