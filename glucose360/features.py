@@ -430,15 +430,27 @@ def hypo_index(df: pd.DataFrame, limit: int = 80, b: float = 2, d: float = 30) -
     BG = df[GLUCOSE].dropna()
     return np.sum(np.power(limit - BG[BG < limit], b)) / (BG.size * d)
 
-def IGC(df: pd.DataFrame) -> float:
+def IGC(df: pd.DataFrame, hyper_limit: int = 140, hypo_limit: int = 80, hyper_a: float = 1.1, hyper_c: float = 30, hypo_b: float = 2, hypo_d: float = 30) -> float:
     """Calculates the Index of Glycemic Control (IGC) for the given CGM trace.
 
     :param df: a Pandas DataFrame containing preprocessed CGM data
     :type df: 'pandas.DataFrame'
+    :param hyper_limit: upper limit of target range (above which would hyperglycemia), defaults to 140 mg/dL
+    :type hyper_limit: int, optional
+    :param hypo_limit: lower limit of target range (above which would hypoglycemia), defaults to 80 mg/dL
+    :type hypo_limit: int, optional
+    :param hyper_a: exponent utilized for Hyperglycemia Index calculation, defaults to 1.1
+    :type hyper_a: float, optional
+    :param hyper_c: constant to help scale Hyperglycemia Index the same as other metrics (e.g. LBGI, HBGI, and GRADE), defaults to 30
+    :type hyper_c: float, optional
+    :param hypo_b: exponent utilized for Hypoglycemia Index calculation, defaults to 2
+    :type hypo_b: float, optional
+    :param hypo_d: constant to help scale Hypoglycemia Index the same as other metrics (e.g. LBGI, HBGI, and GRADE), defaults to 30
+    :type hypo_d: float, optional
     :return: the IGC for the given CGM trace
     :rtype: float
     """
-    return hyper_index(df) + hypo_index(df)
+    return hyper_index(df, hyper_limit, hyper_a, hyper_c) + hypo_index(df, hypo_limit, hypo_b, hypo_d)
 
 def j_index(df: pd.DataFrame) -> float:
     """Calculates the J-Index for the given CGM trace.
