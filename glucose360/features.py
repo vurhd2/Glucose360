@@ -974,6 +974,63 @@ def nocturnal_auc(df: pd.DataFrame) -> float:
 
     return np.nan if not daily_aucs else np.mean(daily_aucs)
 
+def daily_range_helper(df: pd.DataFrame) -> float:
+    """
+    Mean of the daily glucose ranges (max – min) across all complete days.
+    Helper function for Q-Score.
+
+    Returns NaN if no valid data are available.
+    """
+    valid = df.dropna(subset=[GLUCOSE]).copy()
+    if valid.empty:
+        return np.nan
+
+    valid['date'] = valid[TIME].dt.date
+    day_ranges = valid.groupby('date')[GLUCOSE].apply(lambda x: x.max() - x.min())
+    return day_ranges.mean()
+
+def Q_score(df: pd.DataFrame, hyper_limit: int = 180) -> float:
+    """
+    Composite Q-Score.
+
+        Q = 8
+            + (MBG − 140.4) / 30.6
+            + (daily_range − 135) / 52.2
+            + (t_hypo − 0.6) / 1.2
+            + (t_hyper − 6.2) / 5.7
+            + (MODD − 32.4) / 16.2
+
+    All glucose values and constants are in mg/dL; t_hypo and t_hyper are
+    hours/day spent < 70 mg/dL and > 160 mg/dL, respectively.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :param hyper_limit: upper limit of target range (above which would hyperglycemia), defaults to 180 mg/dL, previously 160 mg/dL
+    :type hyper_limit: int, optional
+    :return: the Q-Score for the given CGM trace
+    :rtype: float
+    """
+    mbg = mean(df)
+    drange = daily_range_helper(df)
+    modd = MODD(df)
+
+    # Convert %-of-time to hours/day
+    t_hypo = percent_time_below_range(df) / 100 * 24
+    t_hyper = percent_time_above_range(df, limit=hyper_limit) / 100 * 24
+
+    # If any component is missing, return NaN
+    if np.isnan([mbg, drange, modd, t_hypo, t_hyper]).any():
+        return np.nan
+
+    return (
+        8
+        + (mbg - 140.4) / 30.6
+        + (drange - 135) / 52.2
+        + (t_hypo - 0.6) / 1.2
+        + (t_hyper - 6.2) / 5.7
+        + (modd - 32.4) / 16.2
+    )
+
 
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
@@ -1039,6 +1096,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Percent Time in Hypoglycemia (level 2)": percent_time_in_level_2_hypoglycemia(data),
       "Percent Time In Range (70-180)": percent_time_in_range(data),
       "Percent Time In Tight Range (70-140)": percent_time_in_tight_range(data),
+      "Q-Score": Q_score(data),
       "SD": SD(data),
       "Third Quartile": summary[3],
    }
