@@ -1031,6 +1031,174 @@ def Q_score(df: pd.DataFrame, hyper_limit: int = 180) -> float:
         + (modd - 32.4) / 16.2
     )
 
+def _n_days(df: pd.DataFrame) -> float:
+    """
+    Decimal number of (calendar) days covered by the dataframe.
+    Any partial day counts fractionally; e.g. 36 h = 1.5 days.
+    """
+    t0, t1 = df[TIME].min(), df[TIME].max()
+    if pd.isna(t0) or pd.isna(t1):
+        return np.nan
+    return (t1 - t0).total_seconds() / 86_400.0
+
+def _axis_linear(val: float,
+                 ref: float,
+                 max_val: float,
+                 r0: float = 14.0,
+                 r_max: float = 76.0) -> float:
+    """
+    Maps   ref → r0   and   max_val → r_max   with linear scaling.
+    Values ≤ ref are clamped to r0; values ≥ max_val are clamped to r_max.
+    """
+    if np.isnan(val):
+        return np.nan
+    if val <= ref:
+        return r0
+    if val >= max_val:
+        return r_max
+    return r0 + (r_max - r0) * (val - ref) / (max_val - ref)
+
+
+def _auc_above_helper(df: pd.DataFrame, thr: int = 180) -> float:
+    """Total AUC (mg · min dL⁻¹) **above** *thr* over the *full* time axis."""
+    bg = df[[TIME, GLUCOSE]].dropna().copy()
+    if bg.empty:
+        return 0.0
+    excess = np.maximum(bg[GLUCOSE] - thr, 0.0)
+    if excess.eq(0).all():
+        return 0.0
+    t = (bg[TIME] - bg[TIME].iloc[0]).dt.total_seconds() / 60.0  # minutes
+    return trapezoid(excess, x=t)
+
+
+def _auc_below_helper(df: pd.DataFrame, thr: int = 70) -> float:
+    """Total AUC (mg · min dL⁻¹) **below** *thr* over the *full* time axis."""
+    bg = df[[TIME, GLUCOSE]].dropna().copy()
+    if bg.empty:
+        return 0.0
+    deficit = np.maximum(thr - bg[GLUCOSE], 0.0)
+    if deficit.eq(0).all():
+        return 0.0
+    t = (bg[TIME] - bg[TIME].iloc[0]).dt.total_seconds() / 60.0
+    return trapezoid(deficit, x=t)
+
+
+def _intensity_helper(time_min: float, auc: float) -> float:
+    """Euclidean intensity of an excursion (minutes, mg · min dL⁻¹)."""
+    return float(np.hypot(time_min, auc))
+
+
+
+_GP_MAX = {
+    "HbA1c":     14.0,
+    "Mean":      250.0,
+    "SD":        150.0,
+    "TAbove":    1440.0,
+    "AUCAbove":  432_000.0
+}
+
+
+def glucose_pentagon(df: pd.DataFrame,
+                     hbA1c: float | None = None,
+                     hyper_thr: int = 160) -> dict[str, float]:
+
+    days = _n_days(df)
+    if np.isnan(days) or days == 0:
+        return {"Glucose_Pentagon_Area": np.nan,
+                "Glucose_Pentagon_GRP":  np.nan}
+
+    # ----- core metrics -------------------------------------------------
+    a1c       = hbA1c if hbA1c is not None else eA1c(df)
+    mean_glu  = mean(df)
+    sd_glu    = SD(df)
+
+    # convert to *minutes per day* and *AUC per day*
+    t_above   = (percent_time_above_range(df, hyper_thr) / 100 * 1440)
+    auc_above =  _auc_above_helper(df, hyper_thr) / days
+
+    axes = np.array([
+        _axis_linear(a1c,        5.5,  _GP_MAX["HbA1c"]),
+        _axis_linear(mean_glu,   90.0, _GP_MAX["Mean"]),
+        _axis_linear(sd_glu,     10.0, _GP_MAX["SD"]),
+        _axis_linear(t_above,     0.0, _GP_MAX["TAbove"]),
+        _axis_linear(auc_above,   0.0, _GP_MAX["AUCAbove"])
+    ])
+
+    theta = np.deg2rad(72)
+    area  = 0.5 * np.sum(axes * np.roll(axes, -1) * np.sin(theta))
+    grp   = area / 466.0
+
+    return {"Glucose_Pentagon_Area": area,
+            "Glucose_Pentagon_GRP":  grp}
+
+
+
+_CGP_MAX = {
+    "Mean":     250.0,
+    "CV":        60.0,
+    "ToR":     1440.0,
+    "Intensity": 432_002.0 
+}
+
+def _axis_cgp(val: float, kind: str, r0: float = 14.0, r_max: float = 76.0) -> float:
+    """
+    Returns the radial length (mm) for the selected CGP axis,
+    with hard clamping to the range [14, 76] to prevent
+    negative or oversized radii.
+    """
+    if np.isnan(val):
+        return np.nan
+    match kind:
+        case "Mean":
+            r =  ((val - 90.)*0.0217)**2.63 + 14.
+        case "CV":
+            r = (val - 17.)*0.92 + 14.
+        case "ToR":
+            r = (val*0.00614)**1.581 + 14.
+        case "IntHyper":
+            r = (val*0.000115)**1.51 + 14.
+        case "IntHypo":
+            r = np.exp(val*0.00057) + 13.
+        case _:
+            raise ValueError(kind)
+
+    return max(r0, min(r_max,r))
+
+def comprehensive_glucose_pentagon(df: pd.DataFrame) -> dict[str, float]:
+
+    days = _n_days(df)
+    if np.isnan(days) or days == 0:
+        return {"Comprehensive_Glucose_Pentagon_Area": np.nan,
+                "Comprehensive_Glucose_Pentagon_PGR":  np.nan}
+
+    mean_glu  = mean(df)
+    cv_       = CV(df)
+
+    tir_min   = percent_time_in_range(df) / 100 * 1440 * days
+    tor_min   = (1440*days - tir_min) / days
+
+    t_above   = percent_time_above_range(df, 180) / 100 * 1440
+    t_below   = percent_time_below_range(df, 70)  / 100 * 1440
+    auc_above =  _auc_above_helper(df, 180) / days
+    auc_below =  _auc_below_helper(df, 70)  / days
+
+    int_hyper = _intensity_helper(t_above, auc_above)
+    int_hypo  = _intensity_helper(t_below, auc_below)
+
+    axes = np.array([
+        _axis_cgp(mean_glu,  "Mean"),
+        _axis_cgp(cv_,       "CV"),
+        _axis_cgp(tor_min,   "ToR"),
+        _axis_cgp(int_hyper, "IntHyper"),
+        _axis_cgp(int_hypo,  "IntHypo")
+    ])
+
+    theta = np.deg2rad(72)
+    area  = 0.5 * np.sum(axes * np.roll(axes, -1) * np.sin(theta))
+    pgr   = area / 466.0
+
+    return {"Comprehensive_Glucose_Pentagon_Area": area,
+            "Comprehensive_Glucose_Pentagon_PGR":  pgr}
 
 def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    """Calculates statistics and metrics for a single patient within the given DataFrame
@@ -1043,12 +1211,16 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    :rtype: dict[str, any]
    """
    summary = summary_stats(data)
+   gp = glucose_pentagon(data)
+   cgp = comprehensive_glucose_pentagon(data)
 
    features = {
       ID: id,
       "ADRR": ADRR(data),
       "BGRI": BGRI(data),
       "COGI": COGI(data),
+      "Comprehensive Glucose Pentagon Area": cgp["Comprehensive_Glucose_Pentagon_Area"],
+      "Comprehensive Glucose Pentagon PGR": cgp["Comprehensive_Glucose_Pentagon_PGR"],
       "CONGA": CONGA(data),
       "CV": CV(data),
       "Daytime AUC": auc_daytime(data),
@@ -1056,6 +1228,8 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "FBG": FBG(data),
       "First Quartile": summary[1],
       "GMI": GMI(data),
+      "Glucose Pentagon Area": gp["Glucose_Pentagon_Area"],
+      "Glucose Pentagon GRP": gp["Glucose_Pentagon_GRP"],
       "GRADE": GRADE(data),
       "GRADE (euglycemic)": GRADE_eugly(data),
       "GRADE (hyperglycemic)": GRADE_hyper(data),
