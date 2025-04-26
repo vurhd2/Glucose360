@@ -267,6 +267,19 @@ def HBGI(df: pd.DataFrame) -> float:
     BG = np.maximum(0, BG_formula(df[GLUCOSE]))
     return np.mean(10 * (BG ** 2))
 
+def BGRI(df: pd.DataFrame) -> float:
+    """Calculates the Blood Glucose Risk Index (BGRI).
+
+    BGRI is the overall glucose-risk score obtained by summing
+    the Low Blood Glucose Index (LBGI) and the High Blood Glucose
+    Index (HBGI).
+
+    :param df: Pandas DataFrame with pre-processed CGM data
+    :return: BGRI value
+    """
+    return LBGI(df) + HBGI(df)
+
+
 def COGI(df: pd.DataFrame) -> float:
     """Calculates the Continuous Glucose Monitoring Index (COGI) for the given CGM trace.
 
@@ -965,6 +978,7 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
    features = {
       ID: id,
       "ADRR": ADRR(data),
+      "BGRI": BGRI(data),
       "COGI": COGI(data),
       "CONGA": CONGA(data),
       "CV": CV(data),
