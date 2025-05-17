@@ -435,8 +435,8 @@ def preprocess_data(
    df = df.copy()
    
    df = df.dropna(subset=[GLUCOSE])
-   df.loc[:,'Glucose'] = df['Glucose'].replace("Low", LOW)
-   df.loc[:,'Glucose'] = df['Glucose'].replace("High", HIGH)
+   df.loc[:, GLUCOSE] = df[GLUCOSE].replace("Low", LOW)
+   df.loc[:, GLUCOSE] = df[GLUCOSE].replace("High", HIGH)
    df.reset_index(drop=True, inplace=True)
 
    df[TIME] = pd.to_datetime(df[TIME])
@@ -509,7 +509,7 @@ def _interpolate_data(df: pd.DataFrame, max_gap: int) -> pd.DataFrame:
     s = s.ne(s.shift()).cumsum()
 
     m = df.groupby([s, df[GLUCOSE].isnull()])[GLUCOSE].transform('size').where(df[GLUCOSE].isnull())
-    df['Glucose'] = df['Glucose'].interpolate(method="time", limit_area="inside").mask(m >= int(max_gap / interval))
+    df[GLUCOSE] = df[GLUCOSE].interpolate(method="time", limit_area="inside").mask(m >= int(max_gap / interval))
 
     return df
 
