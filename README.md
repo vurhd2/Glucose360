@@ -139,5 +139,10 @@ Complete documentation is available on ReadTheDocs:
 This project is licensed under the [MIT License](./LICENSE). Feel free to use, modify, and distribute this software in personal or commercial projects.
 
 ---
+Other great tools for researchers using CGM data include:
+
+R: [iglu](https://irinagain.github.io/iglu/)
+
+Matlab: [AGATA](https://github.com/gcappon/agata)
 
 **Thanks for using Glucose360!**
