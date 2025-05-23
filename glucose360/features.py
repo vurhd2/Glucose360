@@ -355,6 +355,42 @@ def GRADE_hyper(df: pd.DataFrame) -> float:
     df_GRADE = GRADE_formula(df)
     return np.sum(df_GRADE[df_GRADE[GLUCOSE] > 140]["GRADE"]) / np.sum(df_GRADE["GRADE"]) * 100
 
+def GRADE_eugly_absolute(df: pd.DataFrame) -> float:
+    """Returns the absolute GRADE contribution from euglycemic values.
+
+    This function sums the GRADE scores for readings in the target
+    glucose range (70–140 mg/dL) without normalizing to the total GRADE.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the absolute euglycemic GRADE for the given CGM trace
+    :rtype: float
+    """
+    df_GRADE = GRADE_formula(df)
+    return np.sum(df_GRADE[(df_GRADE[GLUCOSE] >= 70) & (df_GRADE[GLUCOSE] <= 140)]["GRADE"])
+
+def GRADE_hypo_absolute(df: pd.DataFrame) -> float:
+    """Returns the absolute GRADE contribution from hypoglycemic values.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the absolute hypoglycemic GRADE for the given CGM trace
+    :rtype: float
+    """
+    df_GRADE = GRADE_formula(df)
+    return np.sum(df_GRADE[df_GRADE[GLUCOSE] < 70]["GRADE"])
+
+def GRADE_hyper_absolute(df: pd.DataFrame) -> float:
+    """Returns the absolute GRADE contribution from hyperglycemic values.
+
+    :param df: a Pandas DataFrame containing preprocessed CGM data
+    :type df: 'pandas.DataFrame'
+    :return: the absolute hyperglycemic GRADE for the given CGM trace
+    :rtype: float
+    """
+    df_GRADE = GRADE_formula(df)
+    return np.sum(df_GRADE[df_GRADE[GLUCOSE] > 140]["GRADE"])
+
 def GRADE(df: pd.DataFrame) -> float:
     """Calculates the Glycaemic Risk Assessment Diabetes Equation (GRADE) for the given CGM trace.
 
@@ -1232,8 +1268,11 @@ def compute_features(id: str, data: pd.DataFrame) -> dict[str, any]:
       "Glucose Pentagon GRP": gp["Glucose_Pentagon_GRP"],
       "GRADE": GRADE(data),
       "GRADE (euglycemic)": GRADE_eugly(data),
+      "GRADE (euglycemic absolute)": GRADE_eugly_absolute(data),
       "GRADE (hyperglycemic)": GRADE_hyper(data),
+      "GRADE (hyperglycemic absolute)": GRADE_hyper_absolute(data),
       "GRADE (hypoglycemic)": GRADE_hypo(data),
+      "GRADE (hypoglycemic absolute)": GRADE_hypo_absolute(data),
       "GRI": GRI(data),
       "GVP": GVP(data),
       "HBGI": HBGI(data),
