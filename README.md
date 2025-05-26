@@ -136,7 +136,8 @@ Complete documentation is available on ReadTheDocs:
 
 ## License
 
-This project is licensed under the [MIT License](./LICENSE). Feel free to use, modify, and distribute this software in personal or commercial projects.
+This project is licensed under the [GNU General Public License v2.0](./LICENSE). Feel free to use, modify, and distribute this software under the terms of this
+license.
 
 ---
 We ask that users of Glucose360 also cite predecessor CGM data analysis packages. These packages include:
