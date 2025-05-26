@@ -71,6 +71,12 @@ app_ui = ui.page_fluid(
                 "immediately discarded after your session ends. For processing sensitive health data, we strongly recommend "
                 "installing and running the package locally in your secure environment."
             ),
+            ui.markdown(
+                "**Citation Reminder**  \n"
+                "If you use **Glucose360** in your research, please cite **Glucose360** and the packages it builds on—\
+                **cgmanalysis**, **GLU**, **iglu**, and **AGATA**.  \n"
+                "References are provided in the project’s README."
+),
             ui.hr(),
             ui.markdown(
                 "If you're **unsure about the correct data format**, please see our sample data."
