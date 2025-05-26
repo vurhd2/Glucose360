@@ -139,7 +139,11 @@ Complete documentation is available on ReadTheDocs:
 This project is licensed under the [MIT License](./LICENSE). Feel free to use, modify, and distribute this software in personal or commercial projects.
 
 ---
-Other great tools for researchers using CGM data include:
+We ask that users of Glucose360 also cite predecessor CGM data analysis packages. These packages include:
+
+R: [cgmanalysis](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0216851)
+
+R: [GLU](https://pmc.ncbi.nlm.nih.gov/articles/PMC7394960/)
 
 R: [iglu](https://irinagain.github.io/iglu/)
 
