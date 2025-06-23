@@ -150,4 +150,12 @@ R: [iglu](https://irinagain.github.io/iglu/)
 
 Matlab: [AGATA](https://github.com/gcappon/agata)
 
+**MAGE algorithm**: Glucose360 reuses iglu's unique implementation of MAGE with only a R->python modification. If you use Glucose360's implementation of MAGE, we ask that you additionally cite the following papers:
+
+Fernandes N, Nguyen N, Chun E, Punjabi N and Gaynanova I (2022) Open-Source Algorithm to Calculate Mean Amplitude of Glycemic Excursions Using Short and Long Moving Averages. Journal of Diabetes Science and Technology, Vol. 16, No. 2, 576-577.
+
+Broll S, Urbanek J, Buchanan D, Chun E, Muschelli J, Punjabi N and Gaynanova I (2021). Interpreting blood glucose data with R package iglu. PLoS One, Vol. 16, No. 4, e0248560.
+
+Chun E, Fernandes JN and Gaynanova I (2024) An Update on the iglu Software for Interpreting Continuous Glucose Monitoring Data. Diabetes Technology and Therapeutics, Vol. 26, No. 12, 939-950.
+
 **Thanks for using Glucose360!**

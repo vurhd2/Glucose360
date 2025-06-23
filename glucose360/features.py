@@ -561,6 +561,7 @@ def MAG(df: pd.DataFrame) -> float:
 
 def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 180) -> float:
    """Calculates the Mean Amplitude of Glycemic Excursions (MAGE) for the given CGM trace.
+   Algorithm for calculating MAGE is based on iglu's implementation (please cite their papers found in the README).
 
    :param df: a Pandas DataFrame containing preprocessed CGM data
    :type df: 'pandas.DataFrame'
@@ -598,7 +599,7 @@ def MAGE(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32, max_gap: int = 
 
 def MAGE_helper(df: pd.DataFrame, short_ma: int = 5, long_ma: int = 32) -> float:
    """Calculates the Mean Amplitude of Glycemic Excursions (MAGE) for a specific segment of a CGM trace.
-   Algorithm for calculating MAGE is based on iglu's implementation, and this method is a helper for the MAGE() function.
+   Algorithm for calculating MAGE is based on iglu's implementation (please cite their papers found in the README), and this method is a helper for the MAGE() function.
 
    :param df: a Pandas DataFrame containing preprocessed CGM data without significant gaps (as defined in the MAGE() function)
    :type df: 'pandas.DataFrame'
