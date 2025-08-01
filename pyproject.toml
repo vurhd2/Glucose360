@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glucose360"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
   { name="Dhruv Aron", email="dhruv.aron@gmail.com" },
   { name="Ben W. Ehlert", email="behlert@stanford.edu" }
