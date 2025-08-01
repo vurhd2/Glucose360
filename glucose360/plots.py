@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import glucose360.preprocessing as pp
+import preprocessing as pp
 import configparser
 import json
 from importlib import resources
@@ -8,8 +8,8 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import os
-from glucose360.preprocessing import load_config
-from glucose360.features import percent_time_in_range, percent_time_in_tight_range, mean, CV, GMI
+from preprocessing import load_config
+from features import percent_time_in_range, percent_time_in_tight_range, mean, CV, GMI
 from pathlib import Path
 
 # Initialize config at module level
